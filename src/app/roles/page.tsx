@@ -13,15 +13,23 @@ import {
   Stack,
   Divider,
   Group,
-  Button, // <-- NEW
-  Modal,  // <-- NEW
-  TextInput, // <-- NEW
+  Button,
+  Modal,
+  TextInput,
+  MultiSelect, // <-- NEW
+  ActionIcon,  // <-- NEW
+  Tooltip,     // <-- NEW
+  rem,
 } from '@mantine/core';
-import { useForm } from '@mantine/form'; // <-- NEW
-import { useDisclosure } from '@mantine/hooks'; // <-- NEW
-import { IconAlertCircle, IconPlus } from '@tabler/icons-react'; // <-- NEW
-import { useEffect, useState, useCallback } from 'react'; // <-- NEW
-import { notifications } from '@mantine/notifications'; // <-- NEW
+import { useForm } from '@mantine/form';
+import { useDisclosure } from '@mantine/hooks';
+import {
+  IconAlertCircle,
+  IconPlus,
+  IconPencil, // <-- NEW
+} from '@tabler/icons-react';
+import { useEffect, useState, useCallback } from 'react';
+import { notifications } from '@mantine/notifications';
 
 // Define the types for our data
 interface Permission {
@@ -37,27 +45,56 @@ interface Role {
   permissions: Permission[];
 }
 
+// --- NEW: Type for the MultiSelect data ---
+interface SelectItem {
+  value: string;
+  label: string;
+}
+
 export default function RolesPage() {
   const [roles, setRoles] = useState<Role[]>([]);
   const [permissions, setPermissions] = useState<Permission[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // --- NEW: Modal State ---
-  const [opened, { open, close }] = useDisclosure(false);
+  // --- NEW: State for Edit Modal ---
+  const [selectedRole, setSelectedRole] = useState<Role | null>(null);
+  const [permSelectData, setPermSelectData] = useState<SelectItem[]>([]);
 
-  // --- NEW: Form State ---
+  // Create Modal state
+  const [createModalOpened, { open: openCreate, close: closeCreate }] = useDisclosure(false);
+  // Edit Modal state
+  const [editModalOpened, { open: openEdit, close: closeEdit }] = useDisclosure(false);
+
+  // Create Form
   const createForm = useForm({
+    initialValues: { name: '', description: '' },
+    validate: { name: (val) => (val.trim().length > 0 ? null : 'Role name is required') },
+  });
+
+  // --- NEW: Edit Form ---
+  const editForm = useForm({
     initialValues: {
       name: '',
       description: '',
+      permissionIds: [] as string[], // Array of permission IDs
     },
-    validate: {
-      name: (val) => (val.trim().length > 0 ? null : 'Role name is required'),
-    },
+    validate: { name: (val) => (val.trim().length > 0 ? null : 'Role name is required') },
   });
 
-  // --- NEW: Extracted fetch function ---
+  // --- NEW: Function to open the edit modal ---
+  const handleOpenEditModal = (role: Role) => {
+    setSelectedRole(role);
+    editForm.setValues({
+      name: role.name,
+      description: role.description || '',
+      // Set the MultiSelect to have the IDs of the role's current permissions
+      permissionIds: role.permissions.map((p) => p.id),
+    });
+    openEdit();
+  };
+
+  // Extracted fetch function
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
@@ -65,8 +102,17 @@ export default function RolesPage() {
         api.get('/rbac/roles'),
         api.get('/rbac/permissions'),
       ]);
+
       setRoles(rolesResponse.data);
       setPermissions(permsResponse.data);
+
+      // --- NEW: Format permissions for the MultiSelect ---
+      const selectData = permsResponse.data.map((p: Permission) => ({
+        value: p.id,
+        label: p.name,
+      }));
+      setPermSelectData(selectData);
+
       setError(null);
     } catch (err: any) {
       if (err.response?.status === 403) {
@@ -77,64 +123,76 @@ export default function RolesPage() {
     } finally {
       setLoading(false);
     }
-  }, []); // Empty dependency array, it's stable
+  }, []);
 
-  // Fetch data on initial load
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+  useEffect(() => { fetchData(); }, [fetchData]);
 
-  // --- NEW: Handle Create Role Submit ---
+  // Handle Create Role Submit
   const handleCreateRole = async (values: typeof createForm.values) => {
     try {
-      // Use the backend endpoint we already built
       await api.post('/rbac/role', values);
+      notifications.show({ title: 'Success', message: 'Role created successfully!', color: 'green' });
+      closeCreate();
+      createForm.reset();
+      fetchData();
+    } catch (err: any) {
+      notifications.show({ title: 'Error', message: 'Failed to create role. It may already exist.', color: 'red' });
+    }
+  };
 
-      notifications.show({
-        title: 'Success',
-        message: 'Role created successfully!',
-        color: 'green',
-      });
+  // --- NEW: Handle Edit Role Submit ---
+  const handleEditRole = async (values: typeof editForm.values) => {
+    if (!selectedRole) return;
 
-      close(); // Close the modal
-      createForm.reset(); // Reset the form
+    try {
+      await api.patch(`/rbac/role/${selectedRole.id}`, values);
+      notifications.show({ title: 'Success', message: 'Role updated successfully!', color: 'green' });
+      closeEdit();
+      editForm.reset();
       fetchData(); // Refresh the roles list
     } catch (err: any) {
       console.error(err);
-      notifications.show({
-        title: 'Error',
-        message: 'Failed to create role. It may already exist.',
-        color: 'red',
-      });
+      notifications.show({ title: 'Error', message: 'Failed to update role.', color: 'red' });
     }
   };
 
   return (
     <AdminLayout>
-      {/* --- NEW: Create Role Modal --- */}
-      <Modal opened={opened} onClose={close} title="Create New Role" centered>
+      {/* Create Role Modal */}
+      <Modal opened={createModalOpened} onClose={closeCreate} title="Create New Role" centered>
         <form onSubmit={createForm.onSubmit(handleCreateRole)}>
           <Stack>
-            <TextInput
-              required
-              label="Role Name"
-              placeholder="e.g., Finance Manager"
-              {...createForm.getInputProps('name')}
-            />
-            <TextInput
-              label="Description"
-              placeholder="e.g., Can access billing and invoices."
-              {...createForm.getInputProps('description')}
-            />
+            <TextInput required label="Role Name" placeholder="e.g., Finance Manager" {...createForm.getInputProps('name')} />
+            <TextInput label="Description" placeholder="e.g., Can access billing and invoices." {...createForm.getInputProps('description')} />
             <Button type="submit" loading={createForm.submitting} mt="md">
               Create Role
             </Button>
           </Stack>
         </form>
       </Modal>
+
+      {/* --- NEW: Edit Role Modal --- */}
+      <Modal opened={editModalOpened} onClose={closeEdit} title="Edit Role" centered size="md">
+        <form onSubmit={editForm.onSubmit(handleEditRole)}>
+          <Stack>
+            <TextInput required label="Role Name" {...editForm.getInputProps('name')} />
+            <TextInput label="Description" {...editForm.getInputProps('description')} />
+            <MultiSelect
+              label="Assign Permissions"
+              placeholder="Select permissions"
+              data={permSelectData}
+              searchable
+              clearable
+              {...editForm.getInputProps('permissionIds')}
+            />
+            <Button type="submit" loading={editForm.submitting} mt="md">
+              Save Changes
+            </Button>
+          </Stack>
+        </form>
+      </Modal>
       {/* --- END NEW --- */}
 
-      {/* --- NEW: Title with Button --- */}
       <Group justify="space-between" mb="xl">
         <div>
           <Title order={2}>Role & Permission Management</Title>
@@ -142,11 +200,10 @@ export default function RolesPage() {
             View all roles and available system permissions.
           </Text>
         </div>
-        <Button leftSection={<IconPlus size={14} />} onClick={open}>
+        <Button leftSection={<IconPlus size={14} />} onClick={openCreate}>
           Create Role
         </Button>
       </Group>
-      {/* --- END NEW --- */}
 
       <Paper withBorder p="md" radius="md" style={{ position: 'relative' }}>
         <LoadingOverlay visible={loading} />
@@ -165,7 +222,16 @@ export default function RolesPage() {
               <Stack>
                 {roles.map((role) => (
                   <Paper withBorder shadow="xs" p="md" key={role.id}>
-                    <Text fw={700} size="lg">{role.name}</Text>
+                    {/* --- NEW: Edit Button --- */}
+                    <Group justify="space-between" mb="xs">
+                      <Text fw={700} size="lg">{role.name}</Text>
+                      <Tooltip label="Edit Role">
+                        <ActionIcon variant="default" onClick={() => handleOpenEditModal(role)}>
+                          <IconPencil style={{ width: rem(16), height: rem(16) }} stroke={1.5} />
+                        </ActionIcon>
+                      </Tooltip>
+                    </Group>
+                    {/* --- END NEW --- */}
                     <Text c="dimmed" size="sm" mb="md">{role.description}</Text>
                     <Title order={6} mb="xs">Permissions:</Title>
                     <Group gap="xs">
