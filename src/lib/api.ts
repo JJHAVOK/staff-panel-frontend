@@ -2,7 +2,7 @@ import axios from 'axios';
 import { useAuthStore } from './authStore'; // <-- Import the auth store
 
 const api = axios.create({
-  baseURL: 'https://api.pixelforgedeveloper.com',
+  baseURL: 'https://api.pixelforgedeveloper.com', // REMOVE /v1
   headers: {
     'Content-Type': 'application/json',
   },
