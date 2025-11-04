@@ -20,6 +20,7 @@ import {
   IconSettings,
   IconLogout,
   IconLock,
+  IconFileText,
 } from '@tabler/icons-react';
 
 export function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -94,6 +95,12 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
   		  label="Role Management"
  		  leftSection={<IconLock size="1rem" stroke={1.5} />}
  		  active={pathname === '/roles'}
+		/>
+        <NavLink
+ 		  href="/audit"
+ 		  label="Audit Log"
+ 		  leftSection={<IconFileText size="1rem" stroke={1.5} />}
+  		  active={pathname === '/audit'}
 		/>
         <NavLink
           href="/settings"
