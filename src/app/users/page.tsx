@@ -19,6 +19,7 @@ import {
   ActionIcon,
   Tooltip,
   rem,
+  MultiSelect, // <-- IMPORT
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { useDisclosure } from '@mantine/hooks';
@@ -28,25 +29,42 @@ import {
   IconPlus,
   IconPencil,
   IconTrash,
-  IconUserOff, // <-- NEW ICON
+  IconUserOff,
 } from '@tabler/icons-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { notifications } from '@mantine/notifications';
 
+// StaffUser type now includes the full Role object
 interface StaffUser {
   id: string;
   email: string;
   firstName: string | null;
   lastName: string | null;
   status: string;
-  roles: { name: string }[];
+  roles: { id: string; name: string }[]; // <-- UPDATED
   password?: string;
 }
+
+// --- NEW ---
+interface Role {
+  id: string;
+  name: string;
+}
+interface SelectItem {
+  value: string;
+  label: string;
+}
+// --- END NEW ---
+
 
 export default function UsersPage() {
   const [users, setUsers] = useState<StaffUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // --- NEW ---
+  const [roleSelectData, setRoleSelectData] = useState<SelectItem[]>([]);
+  // --- END NEW ---
 
   const [selectedUser, setSelectedUser] = useState<StaffUser | null>(null);
   const [createModalOpened, { open: openCreate, close: closeCreate }] = useDisclosure(false);
@@ -63,7 +81,13 @@ export default function UsersPage() {
   });
 
   const editForm = useForm({
-    initialValues: { email: '', firstName: '', lastName: '', password: '' },
+    initialValues: {
+      email: '',
+      firstName: '',
+      lastName: '',
+      password: '',
+      roleIds: [] as string[], // <-- ADDED
+    },
     validate: {
       email: (val) => (/^\S+@\S+$/.test(val) ? null : 'Invalid email'),
       password: (val) =>
@@ -80,23 +104,38 @@ export default function UsersPage() {
       firstName: user.firstName || '',
       lastName: user.lastName || '',
       password: '',
+      roleIds: user.roles.map((role) => role.id), // <-- POPULATE ROLES
     });
     openEdit();
   };
 
-  const fetchUsers = async () => {
+  // --- RENAMED and UPDATED ---
+  const fetchData = useCallback(async () => {
     try {
       setLoading(true);
-      const response = await api.get('/user');
-      setUsers(response.data);
+      // Fetch users AND roles
+      const [usersResponse, rolesResponse] = await Promise.all([
+        api.get('/user'),
+        api.get('/rbac/roles'),
+      ]);
+
+      setUsers(usersResponse.data);
+
+      // Format roles for the select box
+      const roleData = rolesResponse.data.map((role: Role) => ({
+        value: role.id,
+        label: role.name,
+      }));
+      setRoleSelectData(roleData);
+
     } catch (err: any) {
       if (err.response?.status === 403) {
-        setError('You do not have permission to view users.');
-      } else { setError('Failed to fetch staff data.'); }
+        setError('You do not have permission to view this data.');
+      } else { setError('Failed to fetch data.'); }
     } finally { setLoading(false); }
-  };
+  }, []); // <-- END UPDATED ---
 
-  useEffect(() => { fetchUsers(); }, []);
+  useEffect(() => { fetchData(); }, [fetchData]);
 
   const handleCreateUser = async (values: typeof createForm.values) => {
     try {
@@ -104,79 +143,71 @@ export default function UsersPage() {
       notifications.show({ title: 'Success', message: 'User created successfully!', color: 'green' });
       closeCreate();
       createForm.reset();
-      fetchUsers();
+      fetchData();
     } catch (err: any) {
       notifications.show({ title: 'Error', message: 'Failed to create user. They may already exist.', color: 'red' });
     }
   };
 
+  // --- UPDATED ---
   const handleEditUser = async (values: typeof editForm.values) => {
     if (!selectedUser) return;
-    const updateData: any = { ...values };
-    if (!updateData.password || updateData.password.trim() === '') {
-      delete updateData.password;
+
+    // Destructure to separate password
+    const { password, ...rest } = values;
+    const updateData: any = { ...rest };
+
+    // Only add password to payload if it's not empty
+    if (password && password.trim() !== '') {
+      updateData.password = password;
     }
+
     try {
       await api.patch(`/user/${selectedUser.id}`, updateData);
       notifications.show({ title: 'Success', message: 'User updated successfully!', color: 'green' });
       closeEdit();
       editForm.reset();
-      fetchUsers();
+      fetchData();
     } catch (err: any) {
       notifications.show({ title: 'Error', message: 'Failed to update user.', color: 'red' });
     }
-  };
+  }; // <-- END UPDATED ---
 
-  // --- UPDATED DEACTIVATE FUNCTION ---
   const openDeactivateModal = (user: StaffUser) =>
     modals.openConfirmModal({
       title: 'Deactivate User',
       centered: true,
-      children: (
-        <Text size="sm">
-          Are you sure you want to deactivate {user.email}? This action is
-          reversible.
-        </Text>
-      ),
+      children: ( <Text size="sm">Are you sure you want to deactivate {user.email}?</Text> ),
       labels: { confirm: 'Deactivate User', cancel: 'Cancel' },
-      confirmProps: { color: 'yellow' }, // Changed color
+      confirmProps: { color: 'yellow' },
       onConfirm: async () => {
         try {
-          // --- UPDATED API CALL ---
           await api.patch(`/user/${user.id}/deactivate`);
           notifications.show({ title: 'Success', message: 'User deactivated!', color: 'green' });
-          fetchUsers();
+          fetchData();
         } catch (err) {
           notifications.show({ title: 'Error', message: 'Failed to deactivate user.', color: 'red' });
         }
       },
     });
-  // --- END OF UPDATE ---
 
-  // --- NEW DELETE FUNCTION ---
   const openDeleteModal = (user: StaffUser) =>
     modals.openConfirmModal({
       title: 'PERMANENTLY DELETE USER',
       centered: true,
-      children: (
-        <Text size="sm" c="red" fw={700}>
-          Are you absolutely sure you want to permanently delete {user.email}?
-          This action cannot be undone.
-        </Text>
-      ),
+      children: ( <Text size="sm" c="red" fw={700}>This action cannot be undone.</Text> ),
       labels: { confirm: 'Delete User Permanently', cancel: 'Cancel' },
       confirmProps: { color: 'red' },
       onConfirm: async () => {
         try {
           await api.delete(`/user/${user.id}`);
           notifications.show({ title: 'Success', message: 'User permanently deleted!', color: 'green' });
-          fetchUsers();
+          fetchData();
         } catch (err) {
           notifications.show({ title: 'Error', message: 'Failed to delete user.', color: 'red' });
         }
       },
     });
-  // --- END OF NEW FUNCTION ---
 
   const rows = users.map((user) => (
     <Table.Tr key={user.id}>
@@ -185,13 +216,11 @@ export default function UsersPage() {
       <Table.Td>{user.email}</Table.Td>
       <Table.Td>
         {user.roles.map((role) => (
-          <Badge key={role.name} color="blue" variant="light">{role.name}</Badge>
+          <Badge key={role.id} color="blue" variant="light">{role.name}</Badge>
         ))}
       </Table.Td>
       <Table.Td>
-        <Badge color={user.status === 'ACTIVE' ? 'green' : 'gray'}>
-          {user.status}
-        </Badge>
+        <Badge color={user.status === 'ACTIVE' ? 'green' : 'gray'}>{user.status}</Badge>
       </Table.Td>
       <Table.Td>
         <Group gap="xs" justify="flex-end">
@@ -200,13 +229,11 @@ export default function UsersPage() {
               <IconPencil style={{ width: rem(16), height: rem(16) }} stroke={1.5} />
             </ActionIcon>
           </Tooltip>
-          {/* --- UPDATED DEACTIVATE BUTTON --- */}
           <Tooltip label="Deactivate user (Soft Delete)">
             <ActionIcon variant="default" color="yellow" onClick={() => openDeactivateModal(user)}>
               <IconUserOff style={{ width: rem(16), height: rem(16) }} stroke={1.5} />
             </ActionIcon>
           </Tooltip>
-          {/* --- NEW DELETE BUTTON --- */}
           <Tooltip label="Delete user (Permanent)">
             <ActionIcon variant="default" color="red" onClick={() => openDeleteModal(user)}>
               <IconTrash style={{ width: rem(16), height: rem(16) }} stroke={1.5} />
@@ -242,6 +269,18 @@ export default function UsersPage() {
             <TextInput required label="Last Name" {...editForm.getInputProps('lastName')} />
             <TextInput required label="Email" {...editForm.getInputProps('email')} />
             <PasswordInput label="New Password" placeholder="Leave blank to keep unchanged" {...editForm.getInputProps('password')} />
+
+            {/* --- ADD THIS --- */}
+            <MultiSelect
+              label="Assign Roles"
+              placeholder="Select roles"
+              data={roleSelectData}
+              searchable
+              clearable
+              {...editForm.getInputProps('roleIds')}
+            />
+            {/* --- END ADD --- */}
+
             <Button type="submit" loading={editForm.submitting} mt="md">
               Save Changes
             </Button>
