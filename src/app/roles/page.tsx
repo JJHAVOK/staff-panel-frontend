@@ -13,9 +13,15 @@ import {
   Stack,
   Divider,
   Group,
+  Button, // <-- NEW
+  Modal,  // <-- NEW
+  TextInput, // <-- NEW
 } from '@mantine/core';
-import { IconAlertCircle } from '@tabler/icons-react';
-import { useEffect, useState } from 'react';
+import { useForm } from '@mantine/form'; // <-- NEW
+import { useDisclosure } from '@mantine/hooks'; // <-- NEW
+import { IconAlertCircle, IconPlus } from '@tabler/icons-react'; // <-- NEW
+import { useEffect, useState, useCallback } from 'react'; // <-- NEW
+import { notifications } from '@mantine/notifications'; // <-- NEW
 
 // Define the types for our data
 interface Permission {
@@ -37,38 +43,110 @@ export default function RolesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setLoading(true);
-        // Fetch both sets of data in parallel
-        const [rolesResponse, permsResponse] = await Promise.all([
-          api.get('/rbac/roles'),
-          api.get('/rbac/permissions'),
-        ]);
+  // --- NEW: Modal State ---
+  const [opened, { open, close }] = useDisclosure(false);
 
-        setRoles(rolesResponse.data);
-        setPermissions(permsResponse.data);
-      } catch (err: any) {
-        if (err.response?.status === 403) {
-          setError('You do not have permission to view roles.');
-        } else {
-          setError('Failed to fetch RBAC data.');
-        }
-      } finally {
-        setLoading(false);
+  // --- NEW: Form State ---
+  const createForm = useForm({
+    initialValues: {
+      name: '',
+      description: '',
+    },
+    validate: {
+      name: (val) => (val.trim().length > 0 ? null : 'Role name is required'),
+    },
+  });
+
+  // --- NEW: Extracted fetch function ---
+  const fetchData = useCallback(async () => {
+    try {
+      setLoading(true);
+      const [rolesResponse, permsResponse] = await Promise.all([
+        api.get('/rbac/roles'),
+        api.get('/rbac/permissions'),
+      ]);
+      setRoles(rolesResponse.data);
+      setPermissions(permsResponse.data);
+      setError(null);
+    } catch (err: any) {
+      if (err.response?.status === 403) {
+        setError('You do not have permission to view roles.');
+      } else {
+        setError('Failed to fetch RBAC data.');
       }
-    };
+    } finally {
+      setLoading(false);
+    }
+  }, []); // Empty dependency array, it's stable
 
+  // Fetch data on initial load
+  useEffect(() => {
     fetchData();
-  }, []);
+  }, [fetchData]);
+
+  // --- NEW: Handle Create Role Submit ---
+  const handleCreateRole = async (values: typeof createForm.values) => {
+    try {
+      // Use the backend endpoint we already built
+      await api.post('/rbac/role', values);
+
+      notifications.show({
+        title: 'Success',
+        message: 'Role created successfully!',
+        color: 'green',
+      });
+
+      close(); // Close the modal
+      createForm.reset(); // Reset the form
+      fetchData(); // Refresh the roles list
+    } catch (err: any) {
+      console.error(err);
+      notifications.show({
+        title: 'Error',
+        message: 'Failed to create role. It may already exist.',
+        color: 'red',
+      });
+    }
+  };
 
   return (
     <AdminLayout>
-      <Title order={2}>Role & Permission Management</Title>
-      <Text c="dimmed" mb="xl">
-        View all roles and available system permissions.
-      </Text>
+      {/* --- NEW: Create Role Modal --- */}
+      <Modal opened={opened} onClose={close} title="Create New Role" centered>
+        <form onSubmit={createForm.onSubmit(handleCreateRole)}>
+          <Stack>
+            <TextInput
+              required
+              label="Role Name"
+              placeholder="e.g., Finance Manager"
+              {...createForm.getInputProps('name')}
+            />
+            <TextInput
+              label="Description"
+              placeholder="e.g., Can access billing and invoices."
+              {...createForm.getInputProps('description')}
+            />
+            <Button type="submit" loading={createForm.submitting} mt="md">
+              Create Role
+            </Button>
+          </Stack>
+        </form>
+      </Modal>
+      {/* --- END NEW --- */}
+
+      {/* --- NEW: Title with Button --- */}
+      <Group justify="space-between" mb="xl">
+        <div>
+          <Title order={2}>Role & Permission Management</Title>
+          <Text c="dimmed">
+            View all roles and available system permissions.
+          </Text>
+        </div>
+        <Button leftSection={<IconPlus size={14} />} onClick={open}>
+          Create Role
+        </Button>
+      </Group>
+      {/* --- END NEW --- */}
 
       <Paper withBorder p="md" radius="md" style={{ position: 'relative' }}>
         <LoadingOverlay visible={loading} />
