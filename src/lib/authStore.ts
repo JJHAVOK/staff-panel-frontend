@@ -3,10 +3,20 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 
 interface AuthState {
   token: string | null;
-  user: { email: string; roles: string[]; permissions: string[] } | null;
+  user: {
+    userId: string | null; // <-- ADD THIS
+    email: string;
+    roles: string[];
+    permissions: string[];
+  } | null;
   setAuth: (
     token: string,
-    user: { email: string; roles: string[]; permissions: string[] },
+    user: {
+      userId: string | null; // <-- ADD THIS
+      email: string;
+      roles: string[];
+      permissions: string[];
+    },
   ) => void;
   clearAuth: () => void;
 }

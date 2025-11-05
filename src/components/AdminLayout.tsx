@@ -1,27 +1,26 @@
 'use client';
 
 import {
-  AppShell,
-  Burger,
-  Group,
-  Skeleton,
-  Title,
-  NavLink,
+  AppShell, Burger, Group, Skeleton, Title, NavLink, TextInput,
+  rem, Popover, Stack, Text, ThemeIcon, Anchor,
 } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import { useAuthStore } from '@/lib/authStore';
 import { useRouter, usePathname } from 'next/navigation';
-import { useEffect, useState } from 'react';
-
-// Import icons
+import { useEffect, useState, useCallback } from 'react'; // Corrected import
 import {
-  IconHome2,
-  IconUsers,
-  IconSettings,
-  IconLogout,
-  IconLock,
-  IconFileText,
+  IconHome2, IconUsers, IconSettings, IconLogout, IconLock,
+  IconFileText, IconSearch, IconUser,
 } from '@tabler/icons-react';
+import api from '@/lib/api';
+
+// Search result interface
+interface SearchResult {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+}
 
 export function AdminLayout({ children }: { children: React.ReactNode }) {
   const [opened, { toggle }] = useDisclosure();
@@ -29,41 +28,84 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { user, token, clearAuth } = useAuthStore();
 
-  // This state will track if we are on the client
-  const [isClient, setIsClient] = useState(false);
+  // --- THIS IS THE FIX FOR THE FLICKER ---
+  // We wait for the auth store to confirm it has loaded from storage
+  const [isHydrated, setIsHydrated] = useState(false);
 
-  // When the component mounts on the client, set isClient to true
   useEffect(() => {
-    setIsClient(true);
+    // Zustand's 'onFinishHydration' is the correct listener
+    const unsubscribe = useAuthStore.persist.onFinishHydration(() => {
+      setIsHydrated(true); // Now we know the token is loaded (or not)
+    });
+
+    // Manually trigger the rehydration
+    useAuthStore.persist.rehydrate();
+
+    return () => {
+      unsubscribe(); // Clean up subscription
+    };
   }, []);
 
-  // This effect handles the authentication check
+  // This effect now safely handles authentication
   useEffect(() => {
-    // Only run this check if we are on the client
-    if (isClient) {
-      // If we are on the client and there is STILL no token, redirect
-      if (!token) {
+    // Wait until the store is hydrated (isHydrated is true)
+    if (isHydrated) {
+      // If hydration is done and we STILL have no token, redirect.
+      if (!useAuthStore.getState().token) {
         router.replace('/login');
       }
     }
-  }, [isClient, token, router]); // Dependencies
+  }, [isHydrated, router]); // Re-check if hydration status changes
+  // --- END OF FIX ---
+
+
+  // --- Search State & Logic (unchanged) ---
+  const [searchTerm, setSearchTerm] = useState('');
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [popoverOpened, setPopoverOpened] = useState(false);
+
+  const fetchSearch = useCallback(async () => {
+    if (searchTerm.length < 3) {
+      setSearchResults([]);
+      setPopoverOpened(false);
+      return;
+    }
+    setSearchLoading(true);
+    setPopoverOpened(true);
+    try {
+      const response = await api.get(`/search?q=${searchTerm}`);
+      setSearchResults(response.data);
+    } catch (error) {
+      setSearchResults([]);
+    } finally {
+      setSearchLoading(false);
+    }
+  }, [searchTerm]);
+
+  useEffect(() => {
+    const delayDebounceFn = setTimeout(() => {
+      fetchSearch();
+    }, 500);
+    return () => clearTimeout(delayDebounceFn);
+  }, [searchTerm, fetchSearch]);
 
   const handleLogout = () => {
     clearAuth();
     router.replace('/login');
   };
 
-  // --- THIS IS THE FIX ---
-  // While we are not on the client OR we have no token,
-  // show a loading skeleton.
-  // This prevents the dashboard from "flickering" before the
-  // redirect or before the user data is loaded.
-  if (!isClient || !token) {
+  // Show the loading skeleton UNTIL the store is hydrated
+  if (!isHydrated) {
     return <Skeleton height="100vh" />;
   }
 
-  // Once auth is confirmed (isClient is true AND token exists),
-  // show the real dashboard.
+  // If hydrated and no token (should be redirecting), show skeleton
+  if (!token) {
+    return <Skeleton height="100vh" />;
+  }
+
+  // If hydrated AND we have a token, show the app
   return (
     <AppShell
       header={{ height: 60 }}
@@ -71,45 +113,59 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
       padding="md"
     >
       <AppShell.Header>
-        <Group h="100%" px="md">
-          <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" />
-          <Title order={3}>PixelForge Staff</Title>
+        <Group h="100%" px="md" justify="space-between" wrap="nowrap">
+          <Group>
+            <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" />
+            <Title order={3}>PixelForge Staff</Title>
+          </Group>
+          <Popover
+            width={rem(450)}
+            opened={popoverOpened && searchTerm.length >= 3}
+            onChange={setPopoverOpened}
+            position="bottom"
+            shadow="md"
+          >
+            <Popover.Target>
+              <TextInput
+                placeholder="Global Search..."
+                leftSection={<IconSearch size="1rem" stroke={1.5} />}
+                value={searchTerm}
+                onChange={(event) => setSearchTerm(event.currentTarget.value)}
+                style={{ width: rem(400) }}
+              />
+            </Popover.Target>
+            <Popover.Dropdown p={rem(5)}>
+              <Stack gap={rem(2)}>
+                {searchLoading && <Text c="dimmed" p="sm">Searching...</Text>}
+                {!searchLoading && searchResults.length === 0 && searchTerm.length >= 3 && (
+                  <Text c="dimmed" p="sm">No results found for "{searchTerm}".</Text>
+                )}
+                {searchResults.length > 0 &&
+                  searchResults.map((result) => (
+                    <Anchor href={`/users/${result.id}`} key={result.id} onClick={() => setPopoverOpened(false)}>
+                      <Group p="xs" style={{ cursor: 'pointer' }}>
+                        <ThemeIcon size="sm" color="blue">
+                          <IconUser size="1rem" />
+                        </ThemeIcon>
+                        <Stack gap={0}>
+                          <Text size="sm">{result.firstName} {result.lastName}</Text>
+                          <Text size="xs" c="dimmed">{result.email}</Text>
+                        </Stack>
+                      </Group>
+                    </Anchor>
+                  ))}
+              </Stack>
+            </Popover.Dropdown>
+          </Popover>
         </Group>
       </AppShell.Header>
 
       <AppShell.Navbar p="md">
-        <NavLink
-          href="/"
-          label="Dashboard"
-          leftSection={<IconHome2 size="1rem" stroke={1.5} />}
-          active={pathname === '/'}
-        />
-        <NavLink
-          href="/users"
-          label="Staff Management"
-          leftSection={<IconUsers size="1rem" stroke={1.5} />}
-          active={pathname === '/users'}
-        />
-        <NavLink
-		  href="/roles"
-  		  label="Role Management"
- 		  leftSection={<IconLock size="1rem" stroke={1.5} />}
- 		  active={pathname === '/roles'}
-		/>
-        <NavLink
- 		  href="/audit"
- 		  label="Audit Log"
- 		  leftSection={<IconFileText size="1rem" stroke={1.5} />}
-  		  active={pathname === '/audit'}
-		/>
-        <NavLink
-          href="/settings"
-          label="Settings"
-          leftSection={<IconSettings size="1rem" stroke={1.5} />}
-          active={pathname === '/settings'}
-        />
-
-        {/* Logout Button */}
+        <NavLink href="/" label="Dashboard" leftSection={<IconHome2 size="1rem" stroke={1.5} />} active={pathname === '/'} />
+        <NavLink href="/users" label="Staff Management" leftSection={<IconUsers size="1rem" stroke={1.5} />} active={pathname === '/users'} />
+        <NavLink href="/roles" label="Role Management" leftSection={<IconLock size="1rem" stroke={1.5} />} active={pathname === '/roles'} />
+        <NavLink href="/audit" label="Audit Log" leftSection={<IconFileText size="1rem" stroke={1.5} />} active={pathname === '/audit'} />
+        <NavLink href="/settings" label="Settings" leftSection={<IconSettings size="1rem" stroke={1.5} />} active={pathname === '/settings'} />
         <NavLink
           label="Logout"
           leftSection={<IconLogout size="1rem" stroke={1.5} />}

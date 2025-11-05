@@ -46,18 +46,20 @@ export default function LoginPage() {
       const { access_token } = response.data;
 
       // 2. Decode the token to get user info
-      const decoded: {
-        email: string;
-        roles: string[];
-        permissions: string[];
-      } = jwtDecode(access_token);
+  const decoded: {
+    email: string;
+    roles: string[];
+    permissions: string[];
+    sub: string; // <-- ADD THIS (this is the userId)
+  } = jwtDecode(access_token);
 
-      // 3. Save the token and user info in our global store
-      setAuth(access_token, {
-        email: decoded.email,
-        roles: decoded.roles,
-        permissions: decoded.permissions,
-      });
+  // 3. Save the token and user info in our global store
+  setAuth(access_token, {
+    userId: decoded.sub, // <-- ADD THIS
+    email: decoded.email,
+    roles: decoded.roles,
+    permissions: decoded.permissions,
+  });
 
       // 4. Redirect to the dashboard
       router.push('/');
