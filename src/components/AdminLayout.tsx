@@ -10,7 +10,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { useEffect, useState, useCallback } from 'react'; // Corrected import
 import {
   IconHome2, IconUsers, IconSettings, IconLogout, IconLock,
-  IconFileText, IconSearch, IconUser,
+  IconFileText, IconSearch, IconUser, IconBriefcase,
 } from '@tabler/icons-react';
 import api from '@/lib/api';
 
@@ -163,6 +163,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
       <AppShell.Navbar p="md">
         <NavLink href="/" label="Dashboard" leftSection={<IconHome2 size="1rem" stroke={1.5} />} active={pathname === '/'} />
         <NavLink href="/users" label="Staff Management" leftSection={<IconUsers size="1rem" stroke={1.5} />} active={pathname === '/users'} />
+        <NavLink href="/crm/organizations"  label="CRM"  leftSection={<IconBriefcase size="1rem" stroke={1.5} />}  active={pathname.startsWith('/crm')}/>
         <NavLink href="/roles" label="Role Management" leftSection={<IconLock size="1rem" stroke={1.5} />} active={pathname === '/roles'} />
         <NavLink href="/audit" label="Audit Log" leftSection={<IconFileText size="1rem" stroke={1.5} />} active={pathname === '/audit'} />
         <NavLink href="/settings" label="Settings" leftSection={<IconSettings size="1rem" stroke={1.5} />} active={pathname === '/settings'} />
