@@ -17,9 +17,13 @@ import api from '@/lib/api';
 // Search result interface
 interface SearchResult {
   id: string;
-  email: string;
-  firstName: string;
-  lastName: string;
+  type: 'user' | 'organization';
+  // User fields
+  email?: string;
+  firstName?: string;
+  lastName?: string;
+  // Org fields
+  name?: string;
 }
 
 export function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -66,29 +70,22 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
   const [popoverOpened, setPopoverOpened] = useState(false);
 
   const fetchSearch = useCallback(async () => {
-    if (searchTerm.length < 3) {
-      setSearchResults([]);
-      setPopoverOpened(false);
-      return;
-    }
-    setSearchLoading(true);
-    setPopoverOpened(true);
-    try {
-      const response = await api.get(`/search?q=${searchTerm}`);
-      setSearchResults(response.data);
-    } catch (error) {
-      setSearchResults([]);
-    } finally {
-      setSearchLoading(false);
-    }
-  }, [searchTerm]);
-
-  useEffect(() => {
-    const delayDebounceFn = setTimeout(() => {
-      fetchSearch();
-    }, 500);
-    return () => clearTimeout(delayDebounceFn);
-  }, [searchTerm, fetchSearch]);
+  if (searchTerm.length < 3) {
+    setSearchResults([]);
+    setPopoverOpened(false);
+    return;
+  }
+  setSearchLoading(true);
+  setPopoverOpened(true);
+  try {
+    const response = await api.get(`/search?q=${searchTerm}`);
+    setSearchResults(response.data); // Backend now sends full objects
+  } catch (error) {
+    setSearchResults([]);
+  } finally {
+    setSearchLoading(false);
+  }
+}, [searchTerm]);
 
   const handleLogout = () => {
     clearAuth();
@@ -141,19 +138,35 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
                   <Text c="dimmed" p="sm">No results found for "{searchTerm}".</Text>
                 )}
                 {searchResults.length > 0 &&
-                  searchResults.map((result) => (
-                    <Anchor href={`/users/${result.id}`} key={result.id} onClick={() => setPopoverOpened(false)}>
-                      <Group p="xs" style={{ cursor: 'pointer' }}>
-                        <ThemeIcon size="sm" color="blue">
-                          <IconUser size="1rem" />
-                        </ThemeIcon>
-                        <Stack gap={0}>
-                          <Text size="sm">{result.firstName} {result.lastName}</Text>
-                          <Text size="xs" c="dimmed">{result.email}</Text>
-                        </Stack>
-                      </Group>
-                    </Anchor>
-                  ))}
+  searchResults.map((result) => {
+    if (result.type === 'user') {
+      return (
+        <Anchor href={`/users/${result.id}`} key={result.id} onClick={() => setPopoverOpened(false)}>
+          <Group p="xs" style={{ cursor: 'pointer' }}>
+            <ThemeIcon size="sm" color="blue"><IconUser size="1rem" /></ThemeIcon>
+            <Stack gap={0}>
+              <Text size="sm">{result.firstName} {result.lastName}</Text>
+              <Text size="xs" c="dimmed">{result.email}</Text>
+            </Stack>
+          </Group>
+        </Anchor>
+      );
+    }
+    if (result.type === 'organization') {
+      return (
+        <Anchor href={`/crm/organizations/${result.id}`} key={result.id} onClick={() => setPopoverOpened(false)}>
+          <Group p="xs" style={{ cursor: 'pointer' }}>
+            <ThemeIcon size="sm" color="gray"><IconBriefcase size="1rem" /></ThemeIcon>
+            <Stack gap={0}>
+              <Text size="sm">{result.name}</Text>
+              <Text size="xs" c="dimmed">Organization</Text>
+            </Stack>
+          </Group>
+        </Anchor>
+      );
+    }
+    return null;
+  })}
               </Stack>
             </Popover.Dropdown>
           </Popover>
