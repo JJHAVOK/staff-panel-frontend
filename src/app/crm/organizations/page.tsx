@@ -5,17 +5,17 @@ import api from '@/lib/api';
 import {
   Title, Alert, Table, LoadingOverlay, Paper, Text, Badge, Button,
   Group, Modal, TextInput, Stack, Tabs, Select,
-  ActionIcon, Tooltip, rem,
-  Anchor, // <-- IMPORTED
+  ActionIcon, Tooltip, rem, NumberInput, Anchor,
 } from '@mantine/core';
+import { DateInput } from '@mantine/dates';
 import { useForm } from '@mantine/form';
 import { useDisclosure } from '@mantine/hooks';
-import { IconAlertCircle, IconPlus, IconPencil, IconTrash } from '@tabler/icons-react';
+import { IconAlertCircle, IconPlus, IconPencil, IconTrash, IconCurrencyDollar } from '@tabler/icons-react';
 import { useEffect, useState, useCallback } from 'react';
 import { notifications } from '@mantine/notifications';
 import { useAuthStore } from '@/lib/authStore';
 import { modals } from '@mantine/modals';
-import Link from 'next/link'; // <-- IMPORTED
+import Link from 'next/link';
 
 // --- Data Structures ---
 interface Organization {
@@ -37,13 +37,31 @@ interface Contact {
   lastName: string;
   email: string;
   title: string | null;
-  phone: string | null; // <-- Added
+  phone: string | null;
   organization: { id: string; name: string } | null;
 }
 
 interface OrgSelectItem {
+  value: string;
+  label: string;
+}
+
+// --- THIS IS THE FIX ---
+interface ContactSelectItem {
   value: string;
   label: string;
+}
+// --- END OF FIX ---
+
+interface Opportunity {
+  id: string;
+  name: string;
+  stage: string;
+  amount: number;
+  closeDate: string;
+  priority: string;
+  contact: { id: string; firstName: string; lastName: string; };
+  organization: { id: string; name: string; };
 }
 // --- End Data Structures ---
 
@@ -51,19 +69,24 @@ export default function CrmPage() {
   // --- States ---
   const [orgs, setOrgs] = useState<Organization[]>([]);
   const [contacts, setContacts] = useState<Contact[]>([]);
+  const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
   const [orgSelect, setOrgSelect] = useState<OrgSelectItem[]>([]);
+  const [contactSelect, setContactSelect] = useState<ContactSelectItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { user } = useAuthStore();
 
   const [selectedOrg, setSelectedOrg] = useState<Organization | null>(null);
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
+  const [selectedOpp, setSelectedOpp] = useState<Opportunity | null>(null); // <-- NEW
 
   // --- Modals and Forms ---
   const [orgCreateModal, { open: openOrgCreate, close: closeOrgCreate }] = useDisclosure(false);
-  const [contactModalOpened, { open: openContact, close: closeContact }] = useDisclosure(false); // Renamed
+  const [contactCreateModal, { open: openContactCreate, close: closeContactCreate }] = useDisclosure(false);
   const [orgEditModal, { open: openOrgEdit, close: closeOrgEdit }] = useDisclosure(false);
   const [contactEditModal, { open: openContactEdit, close: closeContactEdit }] = useDisclosure(false);
+  const [oppCreateModal, { open: openOppCreate, close: closeOppCreate }] = useDisclosure(false);
+  const [oppEditModal, { open: openOppEdit, close: closeOppEdit }] = useDisclosure(false); // <-- NEW;
 
   const orgForm = useForm({
     initialValues: { name: '', industry: '', website: '', phone: '', address: '' },
@@ -91,9 +114,7 @@ export default function CrmPage() {
   });
 
   const editContactForm = useForm({
-    initialValues: {
-      firstName: '', lastName: '', email: '', title: '', phone: '', organizationId: '',
-    },
+    initialValues: { firstName: '', lastName: '', email: '', title: '', phone: '', organizationId: '' },
     validate: {
       firstName: (val) => (val.trim().length > 0 ? null : 'First name is required'),
       lastName: (val) => (val.trim().length > 0 ? null : 'Last name is required'),
@@ -101,73 +122,109 @@ export default function CrmPage() {
     },
   });
 
-  // --- handleOpenEditOrg (FIXED and WORKING) ---
+  const oppForm = useForm({
+    initialValues: {
+      name: '',
+      stage: 'Qualification',
+      amount: 0,
+      closeDate: new Date(),
+      organizationId: '',
+      contactId: '',
+    },
+    validate: {
+      name: (val) => (val.trim().length > 0 ? null : 'Name is required'),
+      amount: (val) => (val >= 0 ? null : 'Amount must be positive'),
+      organizationId: (val) => (val ? null : 'Organization is required'),
+      contactId: (val) => (val ? null : 'Contact is required'),
+    },
+  });
+    
+  // --- NEW: Opportunity Edit Form ---
+  const editOppForm = useForm({
+    initialValues: {
+      name: '',
+      stage: 'Qualification',
+      amount: 0,
+      closeDate: new Date(),
+      priority: 'Medium',
+      organizationId: '',
+      contactId: '',
+    },
+    validate: {
+      name: (val) => (val.trim().length > 0 ? null : 'Name is required'),
+      amount: (val) => (val >= 0 ? null : 'Amount must be positive'),
+      organizationId: (val) => (val ? null : 'Organization is required'),
+      contactId: (val) => (val ? null : 'Contact is required'),
+    },
+  });
+
+  // --- Modal Open Handlers ---
   const handleOpenEditOrg = (org: Organization) => {
     setSelectedOrg(org);
-    const currentValues = {
-      name: org.name,
-      industry: org.industry || '',
-      website: org.website || '',
-      phone: org.phone || '',
-      address: org.address || '',
-    };
+    const currentValues = { name: org.name, industry: org.industry || '', website: org.website || '', phone: org.phone || '', address: org.address || '' };
     editOrgForm.setValues(currentValues);
-    editOrgForm.setInitialValues(currentValues);
+    editOrgForm.setInitialValues(currentValues); 
     openOrgEdit();
   };
 
-  // --- Function to open Edit Contact Modal (WORKING) ---
   const handleOpenEditContact = (contact: Contact) => {
     setSelectedContact(contact);
-    const currentValues = {
-      firstName: contact.firstName,
-      lastName: contact.lastName,
-      email: contact.email,
-      title: contact.title || '',
-      phone: contact.phone || '',
-      organizationId: contact.organization?.id || '',
-    };
+    const currentValues = { firstName: contact.firstName, lastName: contact.lastName, email: contact.email, title: contact.title || '', phone: contact.phone || '', organizationId: contact.organization?.id || '' };
     editContactForm.setValues(currentValues);
     editContactForm.setInitialValues(currentValues);
     openContactEdit();
+  };
+    
+  // --- NEW: Open Edit Opportunity Modal ---
+  const handleOpenEditOpp = (opp: Opportunity) => {
+    setSelectedOpp(opp);
+    const currentValues = {
+      name: opp.name,
+      stage: opp.stage,
+      amount: opp.amount,
+      closeDate: new Date(opp.closeDate), // Convert string back to Date object
+      priority: opp.priority,
+      organizationId: opp.organization.id,
+      contactId: opp.contact.id,
+    };
+    editOppForm.setValues(currentValues);
+    editOppForm.setInitialValues(currentValues);
+    openOppEdit();
   };
 
   const canCreate = user?.permissions.includes('crm:create');
   const canDelete = user?.permissions.includes('crm:delete');
   const canUpdate = user?.permissions.includes('crm:update');
 
-  // --- Data Fetching (Unchanged) ---
+  // --- Data Fetching ---
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
-      const [orgsResponse, contactsResponse] = await Promise.all([
+      const [orgsResponse, contactsResponse, oppsResponse] = await Promise.all([
         api.get('/crm/organizations'),
         api.get('/crm/contacts'),
+        api.get('/crm/opportunities'),
       ]);
+
       setOrgs(orgsResponse.data);
       setContacts(contactsResponse.data);
-      const orgSelectData = orgsResponse.data.map((org: Organization) => ({
-        value: org.id,
-        label: org.name,
-      }));
+      setOpportunities(oppsResponse.data);
+
+      const orgSelectData = orgsResponse.data.map((org: Organization) => ({ value: org.id, label: org.name }));
+      const contactSelectData = contactsResponse.data.map((contact: Contact) => ({ value: contact.id, label: `${contact.firstName} ${contact.lastName}` }));
       setOrgSelect(orgSelectData);
+      setContactSelect(contactSelectData);
+
     } catch (err: any) {
-      if (err.response?.status === 403) {
-        setError('You do not have permission to view CRM data.');
-      } else {
-        setError('Failed to fetch data.');
-      }
-    } finally {
-      setLoading(false);
-    }
+      if (err.response?.status === 403) { setError('You do not have permission to view CRM data.'); } 
+      else { setError('Failed to fetch data.'); }
+    } finally { setLoading(false); }
   }, []);
 
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+  useEffect(() => { fetchData(); }, [fetchData]);
   // --- End Data Fetching ---
 
-  // --- Submit Handlers (All Working) ---
+  // --- Submit Handlers ---
   const handleCreateOrg = async (values: typeof orgForm.values) => {
     try {
       await api.post('/crm/organizations', values);
@@ -179,17 +236,19 @@ export default function CrmPage() {
       notifications.show({ title: 'Error', message: 'Failed to create organization.', color: 'red' });
     }
   };
+
   const handleCreateContact = async (values: typeof contactForm.values) => {
     try {
       await api.post('/crm/contacts', values);
       notifications.show({ title: 'Success', message: 'Contact created!', color: 'green' });
-      closeContact();
+      closeContactCreate();
       contactForm.reset();
       fetchData();
     } catch (err) {
       notifications.show({ title: 'Error', message: 'Failed to create contact.', color: 'red' });
     }
   };
+
   const handleUpdateOrg = async (values: typeof editOrgForm.values) => {
     if (!selectedOrg) return;
     const dirtyValues: Partial<typeof values> = {};
@@ -213,6 +272,7 @@ export default function CrmPage() {
       notifications.show({ title: 'Error', message: 'Failed to update organization.', color: 'red' });
     }
   };
+
   const openDeleteOrgModal = (org: Organization) => {
     modals.openConfirmModal({
       title: 'Delete Organization',
@@ -231,6 +291,7 @@ export default function CrmPage() {
       },
     });
   };
+
   const handleUpdateContact = async (values: typeof editContactForm.values) => {
     if (!selectedContact) return;
     const dirtyValues: Partial<typeof values> = {};
@@ -257,6 +318,7 @@ export default function CrmPage() {
       notifications.show({ title: 'Error', message: 'Failed to update contact.', color: 'red' });
     }
   };
+
   const openDeleteContactModal = (contact: Contact) => {
     modals.openConfirmModal({
       title: 'Delete Contact',
@@ -275,13 +337,81 @@ export default function CrmPage() {
       },
     });
   };
+
+  const handleCreateOpp = async (values: typeof oppForm.values) => {
+    try {
+      const payload = {
+        ...values,
+        closeDate: values.closeDate.toISOString(),
+      };
+      await api.post('/crm/opportunities', payload);
+      notifications.show({ title: 'Success', message: 'Opportunity created!', color: 'green' });
+      closeOppCreate();
+      oppForm.reset();
+      fetchData();
+    } catch (err) {
+      notifications.show({ title: 'Error', message: 'Failed to create opportunity.', color: 'red' });
+    }
+  };
+    
+  // --- NEW: Handle Update Opportunity ---
+  const handleUpdateOpp = async (values: typeof editOppForm.values) => {
+    if (!selectedOpp) return;
+
+    const dirtyValues: any = {};
+    const initialValues = editOppForm.getInitialValues();
+    for (const key in values) {
+      const typedKey = key as keyof typeof values;
+      if (values[typedKey] !== initialValues[typedKey]) {
+        dirtyValues[typedKey] = values[typedKey];
+      }
+    }
+
+    if (Object.keys(dirtyValues).length === 0) {
+      closeOppEdit();
+      return;
+    }
+
+    const payload: any = { ...dirtyValues };
+    if (payload.closeDate) {
+      payload.closeDate = payload.closeDate.toISOString();
+    }
+
+    try {
+      await api.patch(`/crm/opportunities/${selectedOpp.id}`, payload);
+      notifications.show({ title: 'Success', message: 'Opportunity updated!', color: 'green' });
+      closeOppEdit();
+      fetchData();
+    } catch (err) {
+      notifications.show({ title: 'Error', message: 'Failed to update opportunity.', color: 'red' });
+    }
+  };
+
+  // --- NEW: Handle Delete Opportunity ---
+  const openDeleteOppModal = (opp: Opportunity) => {
+    modals.openConfirmModal({
+      title: 'Delete Opportunity',
+      centered: true,
+      children: ( <Text size="sm"> Are you sure you want to delete **{opp.name}**? </Text> ),
+      labels: { confirm: 'Delete', cancel: 'Cancel' },
+      confirmProps: { color: 'red' },
+      onConfirm: async () => {
+        try {
+          await api.delete(`/crm/opportunities/${opp.id}`);
+          notifications.show({ title: 'Success', message: 'Opportunity deleted.', color: 'green' });
+          fetchData();
+        } catch (err) {
+          notifications.show({ title: 'Error', message: 'Failed to delete opportunity.', color: 'red' });
+        }
+      },
+    });
+  };
   // --- End Submit Handlers ---
 
   // --- Table Rows ---
   const orgRows = orgs.map((org) => (
     <Table.Tr key={org.id}>
       <Table.Td>
-        {/* --- FIX 1: Link Organization Name to Profile Page --- */}
         <Anchor component={Link} href={`/crm/organizations/${org.id}`} fw={700}>
           {org.name}
         </Anchor>
@@ -309,7 +439,6 @@ export default function CrmPage() {
   const contactRows = contacts.map((contact) => (
     <Table.Tr key={contact.id}>
       <Table.Td>
-        {/* --- FIX 2: Link Contact Name to Profile Page --- */}
         <Anchor component={Link} href={`/crm/contacts/${contact.id}`} fw={700}>
           {contact.firstName} {contact.lastName}
         </Anchor>
@@ -333,11 +462,41 @@ export default function CrmPage() {
       </Table.Td>
     </Table.Tr>
   ));
+
+  // --- UPDATED: Opportunity Rows ---
+  const oppRows = opportunities.map((opp) => (
+    <Table.Tr key={opp.id}>
+      <Table.Td>
+        <Anchor component={Link} href={`/crm/opportunities/${opp.id}`} fw={700}>
+          {opp.name}
+        </Anchor>
+      </Table.Td>
+      <Table.Td>{opp.organization.name}</Table.Td>
+      <Table.Td>{opp.contact.firstName} {opp.contact.lastName}</Table.Td>
+      <Table.Td>{opp.stage}</Table.Td>
+      <Table.Td>${opp.amount.toLocaleString()}</Table.Td>
+      <Table.Td>{new Date(opp.closeDate).toLocaleDateString()}</Table.Td>
+      <Table.Td>
+        <Group gap="xs" justify="flex-end">
+          <Tooltip label="Edit Opportunity">
+            <ActionIcon variant="default" onClick={() => handleOpenEditOpp(opp)} disabled={!canUpdate}>
+              <IconPencil style={{ width: rem(16), height: rem(16) }} />
+            </ActionIcon>
+          </Tooltip>
+          <Tooltip label="Delete Opportunity">
+            <ActionIcon variant="default" color="red" onClick={() => openDeleteOppModal(opp)} disabled={!canDelete}>
+              <IconTrash style={{ width: rem(16), height: rem(16) }} />
+            </ActionIcon>
+          </Tooltip>
+        </Group>
+      </Table.Td>
+    </Table.Tr>
+  ));
   // --- End Table Rows ---
 
   return (
     <AdminLayout>
-      {/* --- All Modals (Unchanged) --- */}
+      {/* --- All Modals --- */}
       <Modal opened={orgCreateModal} onClose={closeOrgCreate} title="Create Organization" centered>
         <form onSubmit={orgForm.onSubmit(handleCreateOrg)}>
           <Stack>
@@ -350,7 +509,6 @@ export default function CrmPage() {
           </Stack>
         </form>
       </Modal>
-
       <Modal opened={orgEditModal} onClose={closeOrgEdit} title="Edit Organization" centered>
         <form onSubmit={editOrgForm.onSubmit(handleUpdateOrg)}>
           <Stack>
@@ -363,8 +521,7 @@ export default function CrmPage() {
           </Stack>
         </form>
       </Modal>
-
-      <Modal opened={contactModalOpened} onClose={closeContact} title="Create Contact" centered>
+      <Modal opened={contactCreateModal} onClose={closeContactCreate} title="Create Contact" centered>
         <form onSubmit={contactForm.onSubmit(handleCreateContact)}>
           <Stack>
             <Group grow>
@@ -386,7 +543,6 @@ export default function CrmPage() {
           </Stack>
         </form>
       </Modal>
-
       <Modal opened={contactEditModal} onClose={closeContactEdit} title="Edit Contact" centered>
         <form onSubmit={editContactForm.onSubmit(handleUpdateContact)}>
           <Stack>
@@ -409,8 +565,96 @@ export default function CrmPage() {
           </Stack>
         </form>
       </Modal>
-      {/* --- End Modals --- */}
+      <Modal opened={oppCreateModal} onClose={closeOppCreate} title="Create Opportunity" centered>
+        <form onSubmit={oppForm.onSubmit(handleCreateOpp)}>
+          <Stack>
+            <TextInput required label="Opportunity Name" {...oppForm.getInputProps('name')} />
+            <Select
+              label="Stage"
+              data={['Qualification', 'Proposal', 'Negotiation', 'Won', 'Lost']}
+              {...oppForm.getInputProps('stage')}
+            />
+            <NumberInput
+              label="Amount"
+              prefix="$"
+              thousandSeparator
+              {...oppForm.getInputProps('amount')}
+            />
+            <DateInput
+              label="Close Date"
+              valueFormat="YYYY-MM-DD"
+              {...oppForm.getInputProps('closeDate')}
+            />
+            <Select
+              required
+              label="Organization"
+              placeholder="Link to an organization"
+              data={orgSelect}
+              searchable
+              {...oppForm.getInputProps('organizationId')}
+            />
+            <Select
+              required
+              label="Contact"
+              placeholder="Link to a primary contact"
+              data={contactSelect}
+              searchable
+              {...oppForm.getInputProps('contactId')}
+            />
+            <Button type="submit" loading={oppForm.submitting} mt="md">Create</Button>
+          </Stack>
+        </form>
+      </Modal>
       
+      
+      {/* --- NEW: Edit Opportunity Modal --- */}
+      <Modal opened={oppEditModal} onClose={closeOppEdit} title="Edit Opportunity" centered>
+        <form onSubmit={editOppForm.onSubmit(handleUpdateOpp)}>
+          <Stack>
+            <TextInput required label="Opportunity Name" {...editOppForm.getInputProps('name')} />
+            <Select
+              label="Stage"
+              data={['Qualification', 'Proposal', 'Negotiation', 'Won', 'Lost']}
+              {...editOppForm.getInputProps('stage')}
+            />
+            <NumberInput
+              label="Amount"
+              prefix="$"
+              thousandSeparator
+              {...editOppForm.getInputProps('amount')}
+            />
+            <DateInput
+              label="Close Date"
+              valueFormat="YYYY-MM-DD"
+              {...editOppForm.getInputProps('closeDate')}
+            />
+             <Select
+              label="Priority"
+              data={['Low', 'Medium', 'High']}
+              {...editOppForm.getInputProps('priority')}
+            />
+            <Select
+              required
+              label="Organization"
+              placeholder="Link to an organization"
+              data={orgSelect}
+              searchable
+              {...editOppForm.getInputProps('organizationId')}
+            />
+            <Select
+              required
+              label="Contact"
+              placeholder="Link to a primary contact"
+              data={contactSelect}
+              searchable
+              {...editOppForm.getInputProps('contactId')}
+            />
+            <Button type="submit" loading={editOppForm.submitting} mt="md">Save Changes</Button>
+          </Stack>
+        </form>
+      </Modal>
+      {/* --- End Modals --- */}
+
       <Group justify="space-between" mb="xl">
         <div>
           <Title order={2}>CRM</Title>
@@ -422,6 +666,7 @@ export default function CrmPage() {
         <Tabs.List>
           <Tabs.Tab value="organizations">Organizations</Tabs.Tab>
           <Tabs.Tab value="contacts">Contacts</Tabs.Tab>
+          <Tabs.Tab value="opportunities" leftSection={<IconCurrencyDollar size={14} />}>Opportunities</Tabs.Tab>
         </Tabs.List>
 
         <Tabs.Panel value="organizations" pt="md">
@@ -449,7 +694,7 @@ export default function CrmPage() {
         </Tabs.Panel>
 
         <Tabs.Panel value="contacts" pt="md">
-          <Button leftSection={<IconPlus size={14} />} onClick={openContact} disabled={!canCreate} mb="md">
+          <Button leftSection={<IconPlus size={14} />} onClick={openContactCreate} disabled={!canCreate} mb="md">
             Create Contact
           </Button>
           <Paper withBorder radius="md" style={{ position: 'relative' }}>
@@ -467,6 +712,33 @@ export default function CrmPage() {
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>{contactRows}</Table.Tbody>
+              </Table>
+            )}
+          </Paper>
+        </Tabs.Panel>
+
+        {/* --- Opportunities Tab (UPDATED) --- */}
+        <Tabs.Panel value="opportunities" pt="md">
+          <Button leftSection={<IconPlus size={14} />} onClick={openOppCreate} disabled={!canCreate} mb="md">
+            Create Opportunity
+          </Button>
+          <Paper withBorder radius="md" style={{ position: 'relative' }}>
+            <LoadingOverlay visible={loading} />
+            {error && <Alert icon={<IconAlertCircle size="1rem" />} title="Error" color="red">{error}</Alert>}
+            {!error && !loading && (
+              <Table striped highlightOnHover>
+                <Table.Thead>
+                  <Table.Tr>
+                    <Table.Th>Name</Table.Th>
+                    <Table.Th>Organization</Table.Th>
+                    <Table.Th>Contact</Table.Th>
+                    <Table.Th>Stage</Table.Th>
+                    <Table.Th>Amount</Table.Th>
+                    <Table.Th>Close Date</Table.Th>
+                    <Table.Th> </Table.Th>
+                  </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>{oppRows}</Table.Tbody>
               </Table>
             )}
           </Paper>

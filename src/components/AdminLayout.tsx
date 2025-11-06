@@ -10,19 +10,18 @@ import { useRouter, usePathname } from 'next/navigation';
 import { useEffect, useState, useCallback } from 'react'; // Corrected import
 import {
   IconHome2, IconUsers, IconSettings, IconLogout, IconLock,
-  IconFileText, IconSearch, IconUser, IconBriefcase,
+  IconFileText, IconSearch, IconUser, IconBriefcase, IconAddressBook
 } from '@tabler/icons-react';
 import api from '@/lib/api';
+import Link from 'next/link';
 
 // Search result interface
 interface SearchResult {
   id: string;
-  type: 'user' | 'organization';
-  // User fields
+  type: 'user' | 'organization' | 'contact';
   email?: string;
   firstName?: string;
   lastName?: string;
-  // Org fields
   name?: string;
 }
 
@@ -32,7 +31,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { user, token, clearAuth } = useAuthStore();
 
-  // --- THIS IS THE FIX FOR THE FLICKER ---
+  // --- THIS IS THE FIX FOR THE FLICKER/LOGOUT BUG ---
   // We wait for the auth store to confirm it has loaded from storage
   const [isHydrated, setIsHydrated] = useState(false);
 
@@ -68,24 +67,34 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [popoverOpened, setPopoverOpened] = useState(false);
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
 
   const fetchSearch = useCallback(async () => {
-  if (searchTerm.length < 3) {
-    setSearchResults([]);
-    setPopoverOpened(false);
-    return;
-  }
-  setSearchLoading(true);
-  setPopoverOpened(true);
-  try {
-    const response = await api.get(`/search?q=${searchTerm}`);
-    setSearchResults(response.data); // Backend now sends full objects
-  } catch (error) {
-    setSearchResults([]);
-  } finally {
-    setSearchLoading(false);
-  }
-}, [searchTerm]);
+    if (searchTerm.length < 2) {
+      setSearchResults([]);
+      setPopoverOpened(false);
+      return;
+    }
+    setSearchLoading(true);
+    setPopoverOpened(true);
+    try {
+      const response = await api.get(`/search?q=${searchTerm}`);
+      setSearchResults(response.data);
+    } catch (error) {
+      setSearchResults([]);
+    } finally {
+      setSearchLoading(false);
+    }
+  }, [searchTerm]);
+
+  useEffect(() => {
+    const delayDebounceFn = setTimeout(() => {
+      if (searchTerm.length > 1) {
+        fetchSearch();
+      }
+    }, 300);
+    return () => clearTimeout(delayDebounceFn);
+  }, [searchTerm, fetchSearch]);
 
   const handleLogout = () => {
     clearAuth();
@@ -116,11 +125,12 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
             <Title order={3}>PixelForge Staff</Title>
           </Group>
           <Popover
-            width={rem(450)}
-            opened={popoverOpened && searchTerm.length >= 3}
+            width={rem(400)}
+            opened={popoverOpened && searchTerm.length > 1}
             onChange={setPopoverOpened}
             position="bottom"
             shadow="md"
+            withArrow
           >
             <Popover.Target>
               <TextInput
@@ -128,45 +138,68 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
                 leftSection={<IconSearch size="1rem" stroke={1.5} />}
                 value={searchTerm}
                 onChange={(event) => setSearchTerm(event.currentTarget.value)}
+                onFocus={() => setIsSearchFocused(true)}
+                onBlur={() => setTimeout(() => setIsSearchFocused(false), 150)}
                 style={{ width: rem(400) }}
               />
             </Popover.Target>
             <Popover.Dropdown p={rem(5)}>
               <Stack gap={rem(2)}>
                 {searchLoading && <Text c="dimmed" p="sm">Searching...</Text>}
-                {!searchLoading && searchResults.length === 0 && searchTerm.length >= 3 && (
+
+                {!searchLoading && searchResults.length === 0 && searchTerm.length > 1 && (
                   <Text c="dimmed" p="sm">No results found for "{searchTerm}".</Text>
                 )}
-                {searchResults.length > 0 &&
-  searchResults.map((result) => {
-    if (result.type === 'user') {
-      return (
-        <Anchor href={`/users/${result.id}`} key={result.id} onClick={() => setPopoverOpened(false)}>
-          <Group p="xs" style={{ cursor: 'pointer' }}>
-            <ThemeIcon size="sm" color="blue"><IconUser size="1rem" /></ThemeIcon>
-            <Stack gap={0}>
-              <Text size="sm">{result.firstName} {result.lastName}</Text>
-              <Text size="xs" c="dimmed">{result.email}</Text>
-            </Stack>
-          </Group>
-        </Anchor>
-      );
-    }
-    if (result.type === 'organization') {
-      return (
-        <Anchor href={`/crm/organizations/${result.id}`} key={result.id} onClick={() => setPopoverOpened(false)}>
-          <Group p="xs" style={{ cursor: 'pointer' }}>
-            <ThemeIcon size="sm" color="gray"><IconBriefcase size="1rem" /></ThemeIcon>
-            <Stack gap={0}>
-              <Text size="sm">{result.name}</Text>
-              <Text size="xs" c="dimmed">Organization</Text>
-            </Stack>
-          </Group>
-        </Anchor>
-      );
-    }
-    return null;
-  })}
+
+                {!searchLoading && searchResults.length > 0 &&
+                  searchResults.map((result) => {
+                    if (result.type === 'user') {
+                      return (
+                        <Anchor component={Link} href={`/users/${result.id}`} key={result.id} onClick={() => setIsSearchFocused(false)}>
+                          <Group p="xs" style={{ cursor: 'pointer' }}
+                            styles={{ root: { '&:hover': { backgroundColor: 'var(--mantine-color-dark-6)' } } }}
+                          >
+                            <ThemeIcon size="sm" color="blue"><IconUser size="1rem" /></ThemeIcon>
+                            <Stack gap={0}>
+                              <Text size="sm">{result.firstName} {result.lastName}</Text>
+                              <Text size="xs" c="dimmed">{result.email}</Text>
+                            </Stack>
+                          </Group>
+                        </Anchor>
+                      );
+                    }
+                    if (result.type === 'organization') {
+                      return (
+                        <Anchor component={Link} href={`/crm/organizations/${result.id}`} key={result.id} onClick={() => setIsSearchFocused(false)}>
+                          <Group p="xs" style={{ cursor: 'pointer' }}
+                            styles={{ root: { '&:hover': { backgroundColor: 'var(--mantine-color-dark-6)' } } }}
+                          >
+                            <ThemeIcon size="sm" color="gray"><IconBriefcase size="1rem" /></ThemeIcon>
+                            <Stack gap={0}>
+                              <Text size="sm">{result.name}</Text>
+                              <Text size="xs" c="dimmed">Organization</Text>
+                            </Stack>
+                          </Group>
+                        </Anchor>
+                      );
+                    }
+                    if (result.type === 'contact') {
+                      return (
+                        <Anchor component={Link} href={`/crm/contacts/${result.id}`} key={result.id} onClick={() => setIsSearchFocused(false)}>
+                          <Group p="xs" style={{ cursor: 'pointer' }}
+                            styles={{ root: { '&:hover': { backgroundColor: 'var(--mantine-color-dark-6)' } } }}
+                          >
+                            <ThemeIcon size="sm" color="green"><IconAddressBook size="1rem" /></ThemeIcon>
+                            <Stack gap={0}>
+                              <Text size="sm">{result.firstName} {result.lastName}</Text>
+                              <Text size="xs" c="dimmed">{result.email}</Text>
+                            </Stack>
+                          </Group>
+                        </Anchor>
+                      );
+                    }
+                    return null;
+                  })}
               </Stack>
             </Popover.Dropdown>
           </Popover>
@@ -176,7 +209,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
       <AppShell.Navbar p="md">
         <NavLink href="/" label="Dashboard" leftSection={<IconHome2 size="1rem" stroke={1.5} />} active={pathname === '/'} />
         <NavLink href="/users" label="Staff Management" leftSection={<IconUsers size="1rem" stroke={1.5} />} active={pathname === '/users'} />
-        <NavLink href="/crm/organizations"  label="CRM"  leftSection={<IconBriefcase size="1rem" stroke={1.5} />}  active={pathname.startsWith('/crm')}/>
+        <NavLink href="/crm/organizations" label="CRM" leftSection={<IconBriefcase size="1rem" stroke={1.5} />} active={pathname.startsWith('/crm')} />
         <NavLink href="/roles" label="Role Management" leftSection={<IconLock size="1rem" stroke={1.5} />} active={pathname === '/roles'} />
         <NavLink href="/audit" label="Audit Log" leftSection={<IconFileText size="1rem" stroke={1.5} />} active={pathname === '/audit'} />
         <NavLink href="/settings" label="Settings" leftSection={<IconSettings size="1rem" stroke={1.5} />} active={pathname === '/settings'} />
