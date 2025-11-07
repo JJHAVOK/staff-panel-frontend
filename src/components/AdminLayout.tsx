@@ -7,10 +7,11 @@ import {
 import { useDisclosure } from '@mantine/hooks';
 import { useAuthStore } from '@/lib/authStore';
 import { useRouter, usePathname } from 'next/navigation';
-import { useEffect, useState, useCallback } from 'react'; // Corrected import
+import { useEffect, useState, useCallback } from 'react';
 import {
   IconHome2, IconUsers, IconSettings, IconLogout, IconLock,
-  IconFileText, IconSearch, IconUser, IconBriefcase, IconAddressBook
+  IconFileText, IconSearch, IconUser, IconBriefcase, IconAddressBook,
+  IconDiamond, // <-- 2. ADD A NEW ICON
 } from '@tabler/icons-react';
 import api from '@/lib/api';
 import Link from 'next/link';
@@ -18,11 +19,12 @@ import Link from 'next/link';
 // Search result interface
 interface SearchResult {
   id: string;
-  type: 'user' | 'organization' | 'contact';
+  type: 'user' | 'organization' | 'contact' | 'opportunity'; // <-- 1. ADD OPPORTUNITY
   email?: string;
   firstName?: string;
   lastName?: string;
   name?: string;
+  stage?: string; // <-- 1. ADD OPPORTUNITY FIELD
 }
 
 export function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -198,6 +200,23 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
                         </Anchor>
                       );
                     }
+                    // --- 3. ADD THIS ENTIRE 'if' BLOCK ---
+                    if (result.type === 'opportunity') {
+                      return (
+                        <Anchor component={Link} href={`/crm/opportunities/${result.id}`} key={result.id} onClick={() => setIsSearchFocused(false)}>
+                          <Group p="xs" style={{ cursor: 'pointer' }}
+                            styles={{ root: { '&:hover': { backgroundColor: 'var(--mantine-color-dark-6)' } } }}
+                          >
+                            <ThemeIcon size="sm" color="teal"><IconDiamond size="1rem" /></ThemeIcon>
+                            <Stack gap={0}>
+                              <Text size="sm">{result.name}</Text>
+                              <Text size="xs" c="dimmed">Opportunity ({result.stage})</Text>
+                            </Stack>
+                          </Group>
+                        </Anchor>
+                      );
+                    }
+                    // --- END OF NEW BLOCK ---
                     return null;
                   })}
               </Stack>
