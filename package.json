@@ -9,8 +9,10 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@hello-pangea/dnd": "^18.0.1",
     "@mantine/core": "^8.3.6",
     "@mantine/dates": "^8.3.6",
+    "@mantine/dropzone": "^8.3.6",
     "@mantine/form": "^8.3.6",
     "@mantine/hooks": "^8.3.6",
     "@mantine/modals": "^8.3.6",
@@ -38,6 +40,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "babel-plugin-react-compiler": "1.0.0",
+    "baseline-browser-mapping": "^2.9.0",
     "eslint": "^9",
     "eslint-config-next": "16.0.1",
     "tailwindcss": "^4",
