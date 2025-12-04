@@ -2,24 +2,31 @@
 
 import { AdminLayout } from '@/components/AdminLayout';
 import api from '@/lib/api';
-import { Title, Paper, Text, Grid, Stack, Group, Badge, LoadingOverlay, Alert, Tabs, Table } from '@mantine/core';
-import { IconAlertCircle, IconBuildingSkyscraper, IconReceipt2, IconLayoutDashboard, IconPackage } from '@tabler/icons-react';
-import { useParams } from 'next/navigation';
+import { 
+  Title, Paper, Text, Grid, Stack, Group, Badge, LoadingOverlay, Alert, Tabs, 
+  Table, Button, Menu, ActionIcon, Modal, TextInput 
+} from '@mantine/core';
+import { useForm } from '@mantine/form';
+import { useDisclosure } from '@mantine/hooks';
+import { notifications } from '@mantine/notifications';
+import { 
+  IconAlertCircle, IconBuildingSkyscraper, IconReceipt2, IconLayoutDashboard, 
+  IconPackage, IconArrowLeft, IconDots, IconPencil, IconTrash 
+} from '@tabler/icons-react';
+import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { BillingManager } from '@/components/BillingManager';
 import { useAuthStore } from '@/lib/authStore';
 import Link from 'next/link';
+import { modals } from '@mantine/modals';
 
-// --- NEW ORDERS TAB FOR ORGS ---
+// --- COMPONENTS ---
 function OrgOrdersTab({ email }: { email: string | null }) {
   const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!email) {
-      setLoading(false);
-      return;
-    }
+    if (!email) { setLoading(false); return; }
     api.post('/ecommerce/orders/search/email', { email })
       .then(res => setOrders(res.data))
       .catch(() => {})
@@ -54,25 +61,6 @@ function OrgOrdersTab({ email }: { email: string | null }) {
   );
 }
 
-// Define the type for the detailed org data
-interface OrgProfile {
-  id: string;
-  name: string;
-  industry: string | null;
-  website: string | null;
-  phone: string | null;
-  address: string | null;
-  // Note: Org doesn't explicitly have 'email' in schema, 
-  // but we will use the billing email if available or try to match by domain later.
-  // For this specific implementation, we'll try to use a 'contact' email if it exists, 
-  // or just rely on the BillingManager for now if no email field exists on Org.
-  // Wait, Org model doesn't have email. We should probably add it, but for now let's skip email search 
-  // and just show the tab structure ready for when we add it.
-  contacts: { id: string; firstName: string; lastName: string; email: string }[];
-  opportunities: { id: string; name: string; stage: string; amount: number }[];
-}
-
-// Helper: Render a profile field safely
 const InfoField = ({ label, value }: { label: string; value: string | null | undefined }) => (
   <div>
     <Text size="xs" tt="uppercase" c="dimmed">{label}</Text>
@@ -81,48 +69,121 @@ const InfoField = ({ label, value }: { label: string; value: string | null | und
 );
 
 export default function OrganizationProfilePage() {
+  const router = useRouter();
   const { user } = useAuthStore();
   const userPermissions = user?.permissions || [];
   
-  const [org, setOrg] = useState<OrgProfile | null>(null);
+  const [org, setOrg] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const params = useParams();
   const { id } = params;
 
+  // Modals
+  const [editModalOpen, { open: openEdit, close: closeEdit }] = useDisclosure(false);
+
+  const editForm = useForm({
+    initialValues: { name: '', industry: '', website: '', phone: '', address: '' },
+    validate: { name: (val) => (val.length < 1 ? 'Name required' : null) },
+  });
+
+  const canUpdate = userPermissions.includes('crm:orgs:update');
+  const canDelete = userPermissions.includes('crm:orgs:delete');
   const canReadBilling = userPermissions.includes('read:billing');
   const canManageBilling = userPermissions.includes('manage:billing');
   const canReadOrders = userPermissions.includes('read:orders');
 
-  useEffect(() => {
-    if (id) {
-      const fetchOrg = async () => {
-        try {
-          setLoading(true);
-          const response = await api.get(`/crm/organizations/${id}`);
-          setOrg(response.data);
-        } catch (err) {
-          setError('Failed to fetch organization profile.');
-        } finally {
-          setLoading(false);
-        }
-      };
-      fetchOrg();
+  const fetchOrg = async () => {
+    try {
+      setLoading(true);
+      const response = await api.get(`/crm/organizations/${id}`);
+      setOrg(response.data);
+      // Set form values
+      editForm.setValues({
+        name: response.data.name,
+        industry: response.data.industry || '',
+        website: response.data.website || '',
+        phone: response.data.phone || '',
+        address: response.data.address || '',
+      });
+    } catch (err) {
+      setError('Failed to fetch organization profile.');
+    } finally {
+      setLoading(false);
     }
-  }, [id]);
+  };
+
+  useEffect(() => { if (id) fetchOrg(); }, [id]);
+
+  // Actions
+  const handleUpdate = async (values: typeof editForm.values) => {
+    try {
+      await api.patch(`/crm/organizations/${id}`, values);
+      notifications.show({ title: 'Success', message: 'Organization updated.', color: 'green' });
+      closeEdit();
+      fetchOrg();
+    } catch (e) {
+      notifications.show({ title: 'Error', message: 'Update failed.', color: 'red' });
+    }
+  };
+
+  const handleDelete = () => {
+    modals.openConfirmModal({
+      title: 'Delete Organization',
+      children: <Text size="sm">Are you sure you want to delete <b>{org.name}</b>?</Text>,
+      labels: { confirm: 'Delete', cancel: 'Cancel' },
+      confirmProps: { color: 'red' },
+      onConfirm: async () => {
+        try {
+          await api.delete(`/crm/organizations/${id}`);
+          notifications.show({ title: 'Deleted', message: 'Organization removed.', color: 'green' });
+          router.push('/crm/organizations');
+        } catch (e) { notifications.show({ title: 'Error', message: 'Delete failed.', color: 'red' }); }
+      }
+    });
+  };
 
   return (
     <AdminLayout>
       <LoadingOverlay visible={loading} />
-      {error && (
-        <Alert icon={<IconAlertCircle size="1rem" />} title="Error" color="red">
-          {error}
-        </Alert>
-      )}
+      {error && <Alert icon={<IconAlertCircle size="1rem" />} title="Error" color="red">{error}</Alert>}
+
+      {/* Edit Modal */}
+      <Modal opened={editModalOpen} onClose={closeEdit} title="Edit Organization">
+        <form onSubmit={editForm.onSubmit(handleUpdate)}>
+          <Stack>
+            <TextInput label="Name" required {...editForm.getInputProps('name')} />
+            <TextInput label="Industry" {...editForm.getInputProps('industry')} />
+            <TextInput label="Website" {...editForm.getInputProps('website')} />
+            <TextInput label="Phone" {...editForm.getInputProps('phone')} />
+            <TextInput label="Address" {...editForm.getInputProps('address')} />
+            <Button type="submit">Save Changes</Button>
+          </Stack>
+        </form>
+      </Modal>
 
       {org && (
         <Stack>
+          {/* --- HEADER WITH BACK BUTTON & ACTIONS --- */}
+          <Group justify="space-between" mb="md">
+            <Button variant="subtle" leftSection={<IconArrowLeft size={16} />} onClick={() => router.back()}>
+               Back
+            </Button>
+            {(canUpdate || canDelete) && (
+               <Menu shadow="md" width={200}>
+                 <Menu.Target>
+                   <Button variant="default" leftSection={<IconDots size={16} />}>Actions</Button>
+                 </Menu.Target>
+                 <Menu.Dropdown>
+                   {canUpdate && <Menu.Item leftSection={<IconPencil size={14} />} onClick={openEdit}>Edit Details</Menu.Item>}
+                   <Menu.Divider />
+                   {canDelete && <Menu.Item color="red" leftSection={<IconTrash size={14} />} onClick={handleDelete}>Delete Organization</Menu.Item>}
+                 </Menu.Dropdown>
+               </Menu>
+            )}
+          </Group>
+
           <Title order={2}>{org.name}</Title>
           
           <Tabs defaultValue="overview">
@@ -131,7 +192,6 @@ export default function OrganizationProfilePage() {
               {canReadBilling && (
                 <Tabs.Tab value="billing" leftSection={<IconReceipt2 size={14} />}>Billing & Invoices</Tabs.Tab>
               )}
-              {/* --- 👇 NEW ORDERS TAB 👇 --- */}
               {canReadOrders && (
                 <Tabs.Tab value="orders" leftSection={<IconPackage size={14} />}>Orders</Tabs.Tab>
               )}
@@ -153,18 +213,41 @@ export default function OrganizationProfilePage() {
                     <Paper withBorder p="md" radius="md">
                       <Title order={4}>Contacts ({org.contacts.length})</Title>
                       {org.contacts.length === 0 && <Text c="dimmed">No contacts found.</Text>}
-                      {org.contacts.map(c => (
-                        <Text key={c.id}>{c.firstName} {c.lastName}</Text>
-                      ))}
+                      {/* --- CLICKABLE CONTACTS --- */}
+                      <Stack gap="xs" mt="sm">
+                        {org.contacts.map((c: any) => (
+                          <Paper 
+                            key={c.id} withBorder p="xs" 
+                            style={{ cursor: 'pointer' }}
+                            onClick={() => router.push(`/crm/contacts/${c.id}`)} // Link to Contact Page
+                          >
+                            <Text size="sm" fw={500}>{c.firstName} {c.lastName}</Text>
+                            <Text size="xs" c="dimmed">{c.email}</Text>
+                          </Paper>
+                        ))}
+                      </Stack>
                     </Paper>
                   </Grid.Col>
                   <Grid.Col span={6}>
                     <Paper withBorder p="md" radius="md">
                       <Title order={4}>Opportunities ({org.opportunities.length})</Title>
                       {org.opportunities.length === 0 && <Text c="dimmed">No deals found.</Text>}
-                      {org.opportunities.map(o => (
-                        <Text key={o.id}>{o.name} - {o.stage}</Text>
-                      ))}
+                      {/* --- CLICKABLE OPPORTUNITIES --- */}
+                      <Stack gap="xs" mt="sm">
+                        {org.opportunities.map((o: any) => (
+                          <Paper 
+                             key={o.id} withBorder p="xs"
+                             style={{ cursor: 'pointer' }}
+                             onClick={() => router.push(`/crm/opportunities/${o.id}`)} // Link to Deal Page
+                          >
+                            <Group justify="space-between">
+                               <Text size="sm" fw={500}>{o.name}</Text>
+                               <Badge size="xs">{o.stage}</Badge>
+                            </Group>
+                            <Text size="xs" c="dimmed">${o.amount.toLocaleString()}</Text>
+                          </Paper>
+                        ))}
+                      </Stack>
                     </Paper>
                   </Grid.Col>
                 </Grid>
@@ -177,18 +260,14 @@ export default function OrganizationProfilePage() {
               </Tabs.Panel>
             )}
 
-            {/* --- 👇 ORDERS TAB PANEL 👇 --- */}
             {canReadOrders && (
               <Tabs.Panel value="orders" pt="md">
-                 {/* Since Org doesn't have email, we just show placeholder or match first contact */}
-                 {/* In a real app, we'd fetch orders by Org ID, not email */}
                  <Alert title="Organization Orders" color="blue">
                     Orders are currently linked to Contacts by email. 
                     <br/>To view orders, please visit the profile of a Contact in this Organization.
                  </Alert>
               </Tabs.Panel>
             )}
-
           </Tabs>
         </Stack>
       )}

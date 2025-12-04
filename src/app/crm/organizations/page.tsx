@@ -1,749 +1,163 @@
 'use client';
 
+import { useState, useEffect, useCallback } from 'react';
 import { AdminLayout } from '@/components/AdminLayout';
-import api from '@/lib/api';
 import {
-  Title, Alert, Table, LoadingOverlay, Paper, Text, Badge, Button,
-  Group, Modal, TextInput, Stack, Tabs, Select,
-  ActionIcon, Tooltip, rem, NumberInput, Anchor,
+  Title, Button, Group, Table, Modal, TextInput, Stack, Paper, LoadingOverlay, Alert, Menu, ActionIcon, Anchor, Text
 } from '@mantine/core';
-import { DateInput } from '@mantine/dates';
 import { useForm } from '@mantine/form';
-import { useDisclosure } from '@mantine/hooks';
-import { IconAlertCircle, IconPlus, IconPencil, IconTrash, IconCurrencyDollar } from '@tabler/icons-react';
-import { useEffect, useState, useCallback } from 'react';
 import { notifications } from '@mantine/notifications';
+import { IconPlus, IconTrash, IconPencil, IconDots, IconBuildingSkyscraper } from '@tabler/icons-react';
+import api from '@/lib/api';
+import { useDisclosure } from '@mantine/hooks';
 import { useAuthStore } from '@/lib/authStore';
-import { modals } from '@mantine/modals';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { modals } from '@mantine/modals';
 
-// --- Data Structures ---
-interface Organization {
-  id: string;
-  name: string;
-  industry: string | null;
-  website: string | null;
-  phone: string | null;
-  address: string | null;
-  _count: {
-    contacts: number;
-    opportunities: number;
-  };
-}
-
-interface Contact {
-  id: string;
-  firstName: string;
-  lastName: string;
-  email: string;
-  title: string | null;
-  phone: string | null;
-  organization: { id: string; name: string } | null;
-}
-
-interface OrgSelectItem {
-  value: string;
-  label: string;
-}
-
-// --- THIS IS THE FIX ---
-interface ContactSelectItem {
-  value: string;
-  label: string;
-}
-// --- END OF FIX ---
-
-interface Opportunity {
-  id: string;
-  name: string;
-  stage: string;
-  amount: number;
-  closeDate: string;
-  priority: string;
-  contact: { id: string; firstName: string; lastName: string; };
-  organization: { id: string; name: string; };
-}
-// --- End Data Structures ---
-
-export default function CrmPage() {
-  // --- States ---
-  const [orgs, setOrgs] = useState<Organization[]>([]);
-  const [contacts, setContacts] = useState<Contact[]>([]);
-  const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
-  const [orgSelect, setOrgSelect] = useState<OrgSelectItem[]>([]);
-  const [contactSelect, setContactSelect] = useState<ContactSelectItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+export default function OrganizationsPage() {
+  const router = useRouter();
   const { user } = useAuthStore();
+  const userPermissions = user?.permissions || [];
 
-  const [selectedOrg, setSelectedOrg] = useState<Organization | null>(null);
-  const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
-  const [selectedOpp, setSelectedOpp] = useState<Opportunity | null>(null); // <-- NEW
+  const canRead = userPermissions.includes('crm:orgs:read');
+  const canCreate = userPermissions.includes('crm:orgs:create');
+  const canUpdate = userPermissions.includes('crm:orgs:update');
+  const canDelete = userPermissions.includes('crm:orgs:delete');
 
-  // --- Modals and Forms ---
-  const [orgCreateModal, { open: openOrgCreate, close: closeOrgCreate }] = useDisclosure(false);
-  const [contactCreateModal, { open: openContactCreate, close: closeContactCreate }] = useDisclosure(false);
-  const [orgEditModal, { open: openOrgEdit, close: closeOrgEdit }] = useDisclosure(false);
-  const [contactEditModal, { open: openContactEdit, close: closeContactEdit }] = useDisclosure(false);
-  const [oppCreateModal, { open: openOppCreate, close: closeOppCreate }] = useDisclosure(false);
-  const [oppEditModal, { open: openOppEdit, close: closeOppEdit }] = useDisclosure(false); // <-- NEW;
+  const [orgs, setOrgs] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  
+  const [createModalOpen, { open: openCreate, close: closeCreate }] = useDisclosure(false);
+  const [editModalOpen, { open: openEdit, close: closeEdit }] = useDisclosure(false);
+  const [selectedOrg, setSelectedOrg] = useState<any>(null);
 
-  const orgForm = useForm({
+  const createForm = useForm({
     initialValues: { name: '', industry: '', website: '', phone: '', address: '' },
-    validate: {
-      name: (val) => (val.trim().length > 0 ? null : 'Name is required'),
-      website: (val) => (val === '' || new RegExp('^https?://').test(val) ? null : 'Website must start with http:// or https://'),
-    },
+    validate: { name: (v) => (v.trim().length > 0 ? null : 'Name required') },
   });
 
-  const contactForm = useForm({
-    initialValues: { firstName: '', lastName: '', email: '', title: '', phone: '', organizationId: '' },
-    validate: {
-      firstName: (val) => (val.trim().length > 0 ? null : 'First name is required'),
-      lastName: (val) => (val.trim().length > 0 ? null : 'Last name is required'),
-      email: (val) => (/^\S+@\S+$/.test(val) ? null : 'Invalid email'),
-    },
-  });
-
-  const editOrgForm = useForm({
+  const editForm = useForm({
     initialValues: { name: '', industry: '', website: '', phone: '', address: '' },
-    validate: {
-      name: (val) => (val.trim().length > 0 ? null : 'Name is required'),
-      website: (val) => (val === '' || new RegExp('^https?://').test(val) ? null : 'Website must start with http:// or https://'),
-    },
   });
 
-  const editContactForm = useForm({
-    initialValues: { firstName: '', lastName: '', email: '', title: '', phone: '', organizationId: '' },
-    validate: {
-      firstName: (val) => (val.trim().length > 0 ? null : 'First name is required'),
-      lastName: (val) => (val.trim().length > 0 ? null : 'Last name is required'),
-      email: (val) => (/^\S+@\S+$/.test(val) ? null : 'Invalid email'),
-    },
-  });
-
-  const oppForm = useForm({
-    initialValues: {
-      name: '',
-      stage: 'Qualification',
-      amount: 0,
-      closeDate: new Date(),
-      organizationId: '',
-      contactId: '',
-    },
-    validate: {
-      name: (val) => (val.trim().length > 0 ? null : 'Name is required'),
-      amount: (val) => (val >= 0 ? null : 'Amount must be positive'),
-      organizationId: (val) => (val ? null : 'Organization is required'),
-      contactId: (val) => (val ? null : 'Contact is required'),
-    },
-  });
-    
-  // --- NEW: Opportunity Edit Form ---
-  const editOppForm = useForm({
-    initialValues: {
-      name: '',
-      stage: 'Qualification',
-      amount: 0,
-      closeDate: new Date(),
-      priority: 'Medium',
-      organizationId: '',
-      contactId: '',
-    },
-    validate: {
-      name: (val) => (val.trim().length > 0 ? null : 'Name is required'),
-      amount: (val) => (val >= 0 ? null : 'Amount must be positive'),
-      organizationId: (val) => (val ? null : 'Organization is required'),
-      contactId: (val) => (val ? null : 'Contact is required'),
-    },
-  });
-
-  // --- Modal Open Handlers ---
-  const handleOpenEditOrg = (org: Organization) => {
-    setSelectedOrg(org);
-    const currentValues = { name: org.name, industry: org.industry || '', website: org.website || '', phone: org.phone || '', address: org.address || '' };
-    editOrgForm.setValues(currentValues);
-    editOrgForm.setInitialValues(currentValues); 
-    openOrgEdit();
-  };
-
-  const handleOpenEditContact = (contact: Contact) => {
-    setSelectedContact(contact);
-    const currentValues = { firstName: contact.firstName, lastName: contact.lastName, email: contact.email, title: contact.title || '', phone: contact.phone || '', organizationId: contact.organization?.id || '' };
-    editContactForm.setValues(currentValues);
-    editContactForm.setInitialValues(currentValues);
-    openContactEdit();
-  };
-    
-  // --- NEW: Open Edit Opportunity Modal ---
-  const handleOpenEditOpp = (opp: Opportunity) => {
-    setSelectedOpp(opp);
-    const currentValues = {
-      name: opp.name,
-      stage: opp.stage,
-      amount: opp.amount,
-      closeDate: new Date(opp.closeDate), // Convert string back to Date object
-      priority: opp.priority,
-      organizationId: opp.organization.id,
-      contactId: opp.contact.id,
-    };
-    editOppForm.setValues(currentValues);
-    editOppForm.setInitialValues(currentValues);
-    openOppEdit();
-  };
-
-  const canCreate = user?.permissions.includes('crm:create');
-  const canDelete = user?.permissions.includes('crm:delete');
-  const canUpdate = user?.permissions.includes('crm:update');
-
-  // --- Data Fetching ---
   const fetchData = useCallback(async () => {
+    if (!canRead) return;
+    setLoading(true);
     try {
-      setLoading(true);
-      const [orgsResponse, contactsResponse, oppsResponse] = await Promise.all([
-        api.get('/crm/organizations'),
-        api.get('/crm/contacts'),
-        api.get('/crm/opportunities'),
-      ]);
-
-      setOrgs(orgsResponse.data);
-      setContacts(contactsResponse.data);
-      setOpportunities(oppsResponse.data);
-
-      const orgSelectData = orgsResponse.data.map((org: Organization) => ({ value: org.id, label: org.name }));
-      const contactSelectData = contactsResponse.data.map((contact: Contact) => ({ value: contact.id, label: `${contact.firstName} ${contact.lastName}` }));
-      setOrgSelect(orgSelectData);
-      setContactSelect(contactSelectData);
-
-    } catch (err: any) {
-      if (err.response?.status === 403) { setError('You do not have permission to view CRM data.'); } 
-      else { setError('Failed to fetch data.'); }
-    } finally { setLoading(false); }
-  }, []);
+      const res = await api.get('/crm/organizations');
+      setOrgs(res.data);
+    } catch (e) { console.error(e); } finally { setLoading(false); }
+  }, [canRead]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
-  // --- End Data Fetching ---
 
-  // --- Submit Handlers ---
-  const handleCreateOrg = async (values: typeof orgForm.values) => {
+  const handleCreate = async (values: typeof createForm.values) => {
     try {
       await api.post('/crm/organizations', values);
-      notifications.show({ title: 'Success', message: 'Organization created!', color: 'green' });
-      closeOrgCreate();
-      orgForm.reset();
-      fetchData();
-    } catch (err) {
-      notifications.show({ title: 'Error', message: 'Failed to create organization.', color: 'red' });
-    }
+      notifications.show({ title: 'Success', message: 'Organization created.', color: 'green' });
+      closeCreate(); createForm.reset(); fetchData();
+    } catch (e) { notifications.show({ title: 'Error', message: 'Failed to create organization.', color: 'red' }); }
   };
 
-  const handleCreateContact = async (values: typeof contactForm.values) => {
+  const handleUpdate = async (values: typeof editForm.values) => {
     try {
-      await api.post('/crm/contacts', values);
-      notifications.show({ title: 'Success', message: 'Contact created!', color: 'green' });
-      closeContactCreate();
-      contactForm.reset();
-      fetchData();
-    } catch (err) {
-      notifications.show({ title: 'Error', message: 'Failed to create contact.', color: 'red' });
-    }
+      await api.patch(`/crm/organizations/${selectedOrg.id}`, values);
+      notifications.show({ title: 'Success', message: 'Organization updated.', color: 'green' });
+      closeEdit(); fetchData();
+    } catch (e) { notifications.show({ title: 'Error', message: 'Update failed.', color: 'red' }); }
   };
 
-  const handleUpdateOrg = async (values: typeof editOrgForm.values) => {
-    if (!selectedOrg) return;
-    const dirtyValues: Partial<typeof values> = {};
-    const initialValues = editOrgForm.getInitialValues();
-    for (const key in values) {
-      const typedKey = key as keyof typeof values;
-      if (values[typedKey] !== initialValues[typedKey]) {
-        dirtyValues[typedKey] = values[typedKey];
-      }
-    }
-    if (Object.keys(dirtyValues).length === 0) {
-      closeOrgEdit();
-      return;
-    }
-    try {
-      await api.patch(`/crm/organizations/${selectedOrg.id}`, dirtyValues);
-      notifications.show({ title: 'Success', message: 'Organization updated!', color: 'green' });
-      closeOrgEdit();
-      fetchData();
-    } catch (err) {
-      notifications.show({ title: 'Error', message: 'Failed to update organization.', color: 'red' });
-    }
-  };
-
-  const openDeleteOrgModal = (org: Organization) => {
+  const handleDelete = (org: any) => {
     modals.openConfirmModal({
       title: 'Delete Organization',
-      centered: true,
-      children: ( <Text size="sm"> Are you sure you want to delete **{org.name}**? This action is irreversible. </Text> ),
+      children: <Text size="sm">Delete <b>{org.name}</b>? This action is irreversible.</Text>,
       labels: { confirm: 'Delete', cancel: 'Cancel' },
       confirmProps: { color: 'red' },
       onConfirm: async () => {
         try {
           await api.delete(`/crm/organizations/${org.id}`);
-          notifications.show({ title: 'Success', message: 'Organization deleted.', color: 'green' });
+          notifications.show({ title: 'Deleted', message: 'Organization removed.', color: 'green' });
           fetchData();
-        } catch (err) {
-          notifications.show({ title: 'Error', message: 'Failed to delete organization.', color: 'red' });
-        }
-      },
-    });
-  };
-
-  const handleUpdateContact = async (values: typeof editContactForm.values) => {
-    if (!selectedContact) return;
-    const dirtyValues: Partial<typeof values> = {};
-    const initialValues = editContactForm.getInitialValues();
-    for (const key in values) {
-      const typedKey = key as keyof typeof values;
-      if (values[typedKey] !== initialValues[typedKey]) {
-        dirtyValues[typedKey] = values[typedKey];
+        } catch (e) { notifications.show({ title: 'Error', message: 'Delete failed.', color: 'red' }); }
       }
-    }
-    if (Object.keys(dirtyValues).length === 0) {
-      closeContactEdit();
-      return;
-    }
-    if (Object.prototype.hasOwnProperty.call(dirtyValues, 'organizationId') && dirtyValues.organizationId === '') {
-      dirtyValues.organizationId = null as any;
-    }
-    try {
-      await api.patch(`/crm/contacts/${selectedContact.id}`, dirtyValues);
-      notifications.show({ title: 'Success', message: 'Contact updated!', color: 'green' });
-      closeContactEdit();
-      fetchData();
-    } catch (err) {
-      notifications.show({ title: 'Error', message: 'Failed to update contact.', color: 'red' });
-    }
-  };
-
-  const openDeleteContactModal = (contact: Contact) => {
-    modals.openConfirmModal({
-      title: 'Delete Contact',
-      centered: true,
-      children: ( <Text size="sm"> Are you sure you want to delete **{contact.firstName} {contact.lastName}**? </Text> ),
-      labels: { confirm: 'Delete', cancel: 'Cancel' },
-      confirmProps: { color: 'red' },
-      onConfirm: async () => {
-        try {
-          await api.delete(`/crm/contacts/${contact.id}`);
-          notifications.show({ title: 'Success', message: 'Contact deleted.', color: 'green' });
-          fetchData();
-        } catch (err) {
-          notifications.show({ title: 'Error', message: 'Failed to delete contact.', color: 'red' });
-        }
-      },
     });
   };
 
-  const handleCreateOpp = async (values: typeof oppForm.values) => {
-    try {
-      const payload = {
-        ...values,
-        closeDate: values.closeDate.toISOString(),
-      };
-      await api.post('/crm/opportunities', payload);
-      notifications.show({ title: 'Success', message: 'Opportunity created!', color: 'green' });
-      closeOppCreate();
-      oppForm.reset();
-      fetchData();
-    } catch (err) {
-      notifications.show({ title: 'Error', message: 'Failed to create opportunity.', color: 'red' });
-    }
-  };
-    
-  // --- NEW: Handle Update Opportunity ---
-  const handleUpdateOpp = async (values: typeof editOppForm.values) => {
-    if (!selectedOpp) return;
-
-    const dirtyValues: any = {};
-    const initialValues = editOppForm.getInitialValues();
-    for (const key in values) {
-      const typedKey = key as keyof typeof values;
-      if (values[typedKey] !== initialValues[typedKey]) {
-        dirtyValues[typedKey] = values[typedKey];
-      }
-    }
-
-    if (Object.keys(dirtyValues).length === 0) {
-      closeOppEdit();
-      return;
-    }
-
-    const payload: any = { ...dirtyValues };
-    if (payload.closeDate) {
-      payload.closeDate = payload.closeDate.toISOString();
-    }
-
-    try {
-      await api.patch(`/crm/opportunities/${selectedOpp.id}`, payload);
-      notifications.show({ title: 'Success', message: 'Opportunity updated!', color: 'green' });
-      closeOppEdit();
-      fetchData();
-    } catch (err) {
-      notifications.show({ title: 'Error', message: 'Failed to update opportunity.', color: 'red' });
-    }
-  };
-
-  // --- NEW: Handle Delete Opportunity ---
-  const openDeleteOppModal = (opp: Opportunity) => {
-    modals.openConfirmModal({
-      title: 'Delete Opportunity',
-      centered: true,
-      children: ( <Text size="sm"> Are you sure you want to delete **{opp.name}**? </Text> ),
-      labels: { confirm: 'Delete', cancel: 'Cancel' },
-      confirmProps: { color: 'red' },
-      onConfirm: async () => {
-        try {
-          await api.delete(`/crm/opportunities/${opp.id}`);
-          notifications.show({ title: 'Success', message: 'Opportunity deleted.', color: 'green' });
-          fetchData();
-        } catch (err) {
-          notifications.show({ title: 'Error', message: 'Failed to delete opportunity.', color: 'red' });
-        }
-      },
+  const openEditModal = (org: any) => {
+    setSelectedOrg(org);
+    editForm.setValues({
+      name: org.name, industry: org.industry || '', website: org.website || '', phone: org.phone || '', address: org.address || ''
     });
+    openEdit();
   };
-  // --- End Submit Handlers ---
 
-  // --- Table Rows ---
-  const orgRows = orgs.map((org) => (
-    <Table.Tr key={org.id}>
-      <Table.Td>
-        <Anchor component={Link} href={`/crm/organizations/${org.id}`} fw={700}>
-          {org.name}
-        </Anchor>
-      </Table.Td>
-      <Table.Td>{org.industry || 'N/A'}</Table.Td>
-      <Table.Td>{org._count.contacts}</Table.Td>
-      <Table.Td>{org._count.opportunities}</Table.Td>
-      <Table.Td>
-        <Group gap="xs" justify="flex-end">
-          <Tooltip label="Edit Organization">
-            <ActionIcon variant="default" onClick={() => handleOpenEditOrg(org)} disabled={!canUpdate}>
-              <IconPencil style={{ width: rem(16), height: rem(16) }} />
-            </ActionIcon>
-          </Tooltip>
-          <Tooltip label="Delete Organization">
-            <ActionIcon variant="default" color="red" onClick={() => openDeleteOrgModal(org)} disabled={!canDelete}>
-              <IconTrash style={{ width: rem(16), height: rem(16) }} />
-            </ActionIcon>
-          </Tooltip>
-        </Group>
+  const rows = orgs.map((org) => (
+    <Table.Tr key={org.id} style={{ cursor: 'pointer' }} onClick={() => router.push(`/crm/organizations/${org.id}`)}>
+      <Table.Td fw={500}>{org.name}</Table.Td>
+      <Table.Td>{org.industry || '-'}</Table.Td>
+      <Table.Td>{org._count?.contacts || 0}</Table.Td>
+      <Table.Td>{org._count?.opportunities || 0}</Table.Td>
+      <Table.Td onClick={(e) => e.stopPropagation()}>
+        {(canUpdate || canDelete) && (
+           <Menu shadow="md" width={200}>
+             <Menu.Target><ActionIcon variant="subtle"><IconDots size={16} /></ActionIcon></Menu.Target>
+             <Menu.Dropdown>
+               <Menu.Label>Actions</Menu.Label>
+               {canUpdate && <Menu.Item leftSection={<IconPencil size={14}/>} onClick={() => openEditModal(org)}>Edit Organization</Menu.Item>}
+               {canDelete && <Menu.Item color="red" leftSection={<IconTrash size={14}/>} onClick={() => handleDelete(org)}>Delete Organization</Menu.Item>}
+             </Menu.Dropdown>
+           </Menu>
+        )}
       </Table.Td>
     </Table.Tr>
   ));
 
-  const contactRows = contacts.map((contact) => (
-    <Table.Tr key={contact.id}>
-      <Table.Td>
-        <Anchor component={Link} href={`/crm/contacts/${contact.id}`} fw={700}>
-          {contact.firstName} {contact.lastName}
-        </Anchor>
-      </Table.Td>
-      <Table.Td>{contact.email}</Table.Td>
-      <Table.Td>{contact.title || 'N/A'}</Table.Td>
-      <Table.Td>{contact.organization?.name || 'N/A'}</Table.Td>
-      <Table.Td>
-        <Group gap="xs" justify="flex-end">
-          <Tooltip label="Edit Contact">
-            <ActionIcon variant="default" onClick={() => handleOpenEditContact(contact)} disabled={!canUpdate}>
-              <IconPencil style={{ width: rem(16), height: rem(16) }} />
-            </ActionIcon>
-          </Tooltip>
-          <Tooltip label="Delete Contact">
-            <ActionIcon variant="default" color="red" onClick={() => openDeleteContactModal(contact)} disabled={!canDelete}>
-              <IconTrash style={{ width: rem(16), height: rem(16) }} />
-            </ActionIcon>
-          </Tooltip>
-        </Group>
-      </Table.Td>
-    </Table.Tr>
-  ));
-
-  // --- UPDATED: Opportunity Rows ---
-  const oppRows = opportunities.map((opp) => (
-    <Table.Tr key={opp.id}>
-      <Table.Td>
-        <Anchor component={Link} href={`/crm/opportunities/${opp.id}`} fw={700}>
-          {opp.name}
-        </Anchor>
-      </Table.Td>
-      <Table.Td>{opp.organization.name}</Table.Td>
-      <Table.Td>{opp.contact.firstName} {opp.contact.lastName}</Table.Td>
-      <Table.Td>{opp.stage}</Table.Td>
-      <Table.Td>${opp.amount.toLocaleString()}</Table.Td>
-      <Table.Td>{new Date(opp.closeDate).toLocaleDateString()}</Table.Td>
-      <Table.Td>
-        <Group gap="xs" justify="flex-end">
-          <Tooltip label="Edit Opportunity">
-            <ActionIcon variant="default" onClick={() => handleOpenEditOpp(opp)} disabled={!canUpdate}>
-              <IconPencil style={{ width: rem(16), height: rem(16) }} />
-            </ActionIcon>
-          </Tooltip>
-          <Tooltip label="Delete Opportunity">
-            <ActionIcon variant="default" color="red" onClick={() => openDeleteOppModal(opp)} disabled={!canDelete}>
-              <IconTrash style={{ width: rem(16), height: rem(16) }} />
-            </ActionIcon>
-          </Tooltip>
-        </Group>
-      </Table.Td>
-    </Table.Tr>
-  ));
-  // --- End Table Rows ---
+  if (!canRead) return <AdminLayout><Alert color="red">Access Denied</Alert></AdminLayout>;
 
   return (
     <AdminLayout>
-      {/* --- All Modals --- */}
-      <Modal opened={orgCreateModal} onClose={closeOrgCreate} title="Create Organization" centered>
-        <form onSubmit={orgForm.onSubmit(handleCreateOrg)}>
+      <Modal opened={createModalOpen} onClose={closeCreate} title="Create Organization">
+        <form onSubmit={createForm.onSubmit(handleCreate)}>
           <Stack>
-            <TextInput required label="Organization Name" {...orgForm.getInputProps('name')} />
-            <TextInput label="Industry" {...orgForm.getInputProps('industry')} />
-            <TextInput label="Website" {...orgForm.getInputProps('website')} />
-            <TextInput label="Phone" {...orgForm.getInputProps('phone')} />
-            <TextInput label="Address" {...orgForm.getInputProps('address')} />
-            <Button type="submit" loading={orgForm.submitting} mt="md">Create</Button>
+            <TextInput label="Name" required {...createForm.getInputProps('name')} />
+            <TextInput label="Industry" {...createForm.getInputProps('industry')} />
+            <TextInput label="Website" {...createForm.getInputProps('website')} />
+            <TextInput label="Phone" {...createForm.getInputProps('phone')} />
+            <TextInput label="Address" {...createForm.getInputProps('address')} />
+            <Button type="submit">Create</Button>
           </Stack>
         </form>
       </Modal>
-      <Modal opened={orgEditModal} onClose={closeOrgEdit} title="Edit Organization" centered>
-        <form onSubmit={editOrgForm.onSubmit(handleUpdateOrg)}>
+
+      <Modal opened={editModalOpen} onClose={closeEdit} title="Edit Organization">
+        <form onSubmit={editForm.onSubmit(handleUpdate)}>
           <Stack>
-            <TextInput required label="Organization Name" {...editOrgForm.getInputProps('name')} />
-            <TextInput label="Industry" {...editOrgForm.getInputProps('industry')} />
-            <TextInput label="Website" {...editOrgForm.getInputProps('website')} />
-            <TextInput label="Phone" {...editOrgForm.getInputProps('phone')} />
-            <TextInput label="Address" {...editOrgForm.getInputProps('address')} />
-            <Button type="submit" loading={editOrgForm.submitting} mt="md">Save Changes</Button>
+            <TextInput label="Name" required {...editForm.getInputProps('name')} />
+            <TextInput label="Industry" {...editForm.getInputProps('industry')} />
+            <TextInput label="Website" {...editForm.getInputProps('website')} />
+            <TextInput label="Phone" {...editForm.getInputProps('phone')} />
+            <TextInput label="Address" {...editForm.getInputProps('address')} />
+            <Button type="submit">Save Changes</Button>
           </Stack>
         </form>
       </Modal>
-      <Modal opened={contactCreateModal} onClose={closeContactCreate} title="Create Contact" centered>
-        <form onSubmit={contactForm.onSubmit(handleCreateContact)}>
-          <Stack>
-            <Group grow>
-              <TextInput required label="First Name" {...contactForm.getInputProps('firstName')} />
-              <TextInput required label="Last Name" {...contactForm.getInputProps('lastName')} />
-            </Group>
-            <TextInput required label="Email" {...contactForm.getInputProps('email')} />
-            <TextInput label="Title" placeholder="e.g., CEO" {...contactForm.getInputProps('title')} />
-            <TextInput label="Phone" {...contactForm.getInputProps('phone')} />
-            <Select
-              label="Organization"
-              placeholder="Link to an organization"
-              data={orgSelect}
-              searchable
-              clearable
-              {...contactForm.getInputProps('organizationId')}
-            />
-            <Button type="submit" loading={contactForm.submitting} mt="md">Create</Button>
-          </Stack>
-        </form>
-      </Modal>
-      <Modal opened={contactEditModal} onClose={closeContactEdit} title="Edit Contact" centered>
-        <form onSubmit={editContactForm.onSubmit(handleUpdateContact)}>
-          <Stack>
-            <Group grow>
-              <TextInput required label="First Name" {...editContactForm.getInputProps('firstName')} />
-              <TextInput required label="Last Name" {...editContactForm.getInputProps('lastName')} />
-            </Group>
-            <TextInput required label="Email" {...editContactForm.getInputProps('email')} />
-            <TextInput label="Title" {...editContactForm.getInputProps('title')} />
-            <TextInput label="Phone" {...editContactForm.getInputProps('phone')} />
-            <Select
-              label="Organization"
-              placeholder="Link to an organization"
-              data={orgSelect}
-              searchable
-              clearable
-              {...editContactForm.getInputProps('organizationId')}
-            />
-            <Button type="submit" loading={editContactForm.submitting} mt="md">Save Changes</Button>
-          </Stack>
-        </form>
-      </Modal>
-      <Modal opened={oppCreateModal} onClose={closeOppCreate} title="Create Opportunity" centered>
-        <form onSubmit={oppForm.onSubmit(handleCreateOpp)}>
-          <Stack>
-            <TextInput required label="Opportunity Name" {...oppForm.getInputProps('name')} />
-            <Select
-              label="Stage"
-              data={['Qualification', 'Proposal', 'Negotiation', 'Won', 'Lost']}
-              {...oppForm.getInputProps('stage')}
-            />
-            <NumberInput
-              label="Amount"
-              prefix="$"
-              thousandSeparator
-              {...oppForm.getInputProps('amount')}
-            />
-            <DateInput
-              label="Close Date"
-              valueFormat="YYYY-MM-DD"
-              {...oppForm.getInputProps('closeDate')}
-            />
-            <Select
-              required
-              label="Organization"
-              placeholder="Link to an organization"
-              data={orgSelect}
-              searchable
-              {...oppForm.getInputProps('organizationId')}
-            />
-            <Select
-              required
-              label="Contact"
-              placeholder="Link to a primary contact"
-              data={contactSelect}
-              searchable
-              {...oppForm.getInputProps('contactId')}
-            />
-            <Button type="submit" loading={oppForm.submitting} mt="md">Create</Button>
-          </Stack>
-        </form>
-      </Modal>
-      
-      
-      {/* --- NEW: Edit Opportunity Modal --- */}
-      <Modal opened={oppEditModal} onClose={closeOppEdit} title="Edit Opportunity" centered>
-        <form onSubmit={editOppForm.onSubmit(handleUpdateOpp)}>
-          <Stack>
-            <TextInput required label="Opportunity Name" {...editOppForm.getInputProps('name')} />
-            <Select
-              label="Stage"
-              data={['Qualification', 'Proposal', 'Negotiation', 'Won', 'Lost']}
-              {...editOppForm.getInputProps('stage')}
-            />
-            <NumberInput
-              label="Amount"
-              prefix="$"
-              thousandSeparator
-              {...editOppForm.getInputProps('amount')}
-            />
-            <DateInput
-              label="Close Date"
-              valueFormat="YYYY-MM-DD"
-              {...editOppForm.getInputProps('closeDate')}
-            />
-             <Select
-              label="Priority"
-              data={['Low', 'Medium', 'High']}
-              {...editOppForm.getInputProps('priority')}
-            />
-            <Select
-              required
-              label="Organization"
-              placeholder="Link to an organization"
-              data={orgSelect}
-              searchable
-              {...editOppForm.getInputProps('organizationId')}
-            />
-            <Select
-              required
-              label="Contact"
-              placeholder="Link to a primary contact"
-              data={contactSelect}
-              searchable
-              {...editOppForm.getInputProps('contactId')}
-            />
-            <Button type="submit" loading={editOppForm.submitting} mt="md">Save Changes</Button>
-          </Stack>
-        </form>
-      </Modal>
-      {/* --- End Modals --- */}
 
       <Group justify="space-between" mb="xl">
-        <div>
-          <Title order={2}>CRM</Title>
-          <Text c="dimmed">Manage all organizations and contacts.</Text>
-        </div>
+        <Group>
+           <IconBuildingSkyscraper size={32} />
+           <Title order={2}>Organizations</Title>
+        </Group>
+        {canCreate && <Button leftSection={<IconPlus size={16}/>} onClick={openCreate}>New Organization</Button>}
       </Group>
 
-      <Tabs defaultValue="organizations">
-        <Tabs.List>
-          <Tabs.Tab value="organizations">Organizations</Tabs.Tab>
-          <Tabs.Tab value="contacts">Contacts</Tabs.Tab>
-          <Tabs.Tab value="opportunities" leftSection={<IconCurrencyDollar size={14} />}>Opportunities</Tabs.Tab>
-        </Tabs.List>
-
-        <Tabs.Panel value="organizations" pt="md">
-          <Button leftSection={<IconPlus size={14} />} onClick={openOrgCreate} disabled={!canCreate} mb="md">
-            Create Organization
-          </Button>
-          <Paper withBorder radius="md" style={{ position: 'relative' }}>
-            <LoadingOverlay visible={loading} />
-            {error && <Alert icon={<IconAlertCircle size="1rem" />} title="Error" color="red">{error}</Alert>}
-            {!error && !loading && (
-              <Table striped highlightOnHover>
-                <Table.Thead>
-                  <Table.Tr>
-                    <Table.Th>Name</Table.Th>
-                    <Table.Th>Industry</Table.Th>
-                    <Table.Th>Contacts</Table.Th>
-                    <Table.Th>Deals</Table.Th>
-                    <Table.Th> </Table.Th>
-                  </Table.Tr>
-                </Table.Thead>
-                <Table.Tbody>{orgRows}</Table.Tbody>
-              </Table>
-            )}
-          </Paper>
-        </Tabs.Panel>
-
-        <Tabs.Panel value="contacts" pt="md">
-          <Button leftSection={<IconPlus size={14} />} onClick={openContactCreate} disabled={!canCreate} mb="md">
-            Create Contact
-          </Button>
-          <Paper withBorder radius="md" style={{ position: 'relative' }}>
-            <LoadingOverlay visible={loading} />
-            {error && <Alert icon={<IconAlertCircle size="1rem" />} title="Error" color="red">{error}</Alert>}
-            {!error && !loading && (
-              <Table striped highlightOnHover>
-                <Table.Thead>
-                  <Table.Tr>
-                    <Table.Th>Name</Table.Th>
-                    <Table.Th>Email</Table.Th>
-                    <Table.Th>Title</Table.Th>
-                    <Table.Th>Organization</Table.Th>
-                    <Table.Th> </Table.Th>
-                  </Table.Tr>
-                </Table.Thead>
-                <Table.Tbody>{contactRows}</Table.Tbody>
-              </Table>
-            )}
-          </Paper>
-        </Tabs.Panel>
-
-        {/* --- Opportunities Tab (UPDATED) --- */}
-        <Tabs.Panel value="opportunities" pt="md">
-          <Button leftSection={<IconPlus size={14} />} onClick={openOppCreate} disabled={!canCreate} mb="md">
-            Create Opportunity
-          </Button>
-          <Paper withBorder radius="md" style={{ position: 'relative' }}>
-            <LoadingOverlay visible={loading} />
-            {error && <Alert icon={<IconAlertCircle size="1rem" />} title="Error" color="red">{error}</Alert>}
-            {!error && !loading && (
-              <Table striped highlightOnHover>
-                <Table.Thead>
-                  <Table.Tr>
-                    <Table.Th>Name</Table.Th>
-                    <Table.Th>Organization</Table.Th>
-                    <Table.Th>Contact</Table.Th>
-                    <Table.Th>Stage</Table.Th>
-                    <Table.Th>Amount</Table.Th>
-                    <Table.Th>Close Date</Table.Th>
-                    <Table.Th> </Table.Th>
-                  </Table.Tr>
-                </Table.Thead>
-                <Table.Tbody>{oppRows}</Table.Tbody>
-              </Table>
-            )}
-          </Paper>
-        </Tabs.Panel>
-      </Tabs>
+      <Paper withBorder radius="md">
+        <LoadingOverlay visible={loading} />
+        <Table striped highlightOnHover>
+          <Table.Thead><Table.Tr><Table.Th>Name</Table.Th><Table.Th>Industry</Table.Th><Table.Th>Contacts</Table.Th><Table.Th>Deals</Table.Th><Table.Th>Actions</Table.Th></Table.Tr></Table.Thead>
+          <Table.Tbody>{rows}</Table.Tbody>
+        </Table>
+      </Paper>
     </AdminLayout>
   );
 }

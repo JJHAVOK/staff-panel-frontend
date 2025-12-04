@@ -5,7 +5,7 @@ import { AdminLayout } from '@/components/AdminLayout';
 import {
   Title, Text, Button, Group, Table, Modal, TextInput, NumberInput,
   Textarea, Stack, Paper, LoadingOverlay, Alert, Badge, ActionIcon,
-  Switch, Select, Tooltip, Tabs, Image, SimpleGrid, rem
+  Switch, Select, Tooltip, Tabs, Image, SimpleGrid, rem, Menu
 } from '@mantine/core';
 import { Dropzone, MIME_TYPES } from '@mantine/dropzone';
 import { useForm } from '@mantine/form';
@@ -13,7 +13,7 @@ import { useDisclosure } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
 import { 
   IconAlertCircle, IconPlus, IconTrash, IconBox, IconAlertTriangle, 
-  IconPhoto, IconUpload, IconX, IconPencil
+  IconPhoto, IconUpload, IconX, IconPencil, IconDots
 } from '@tabler/icons-react';
 import api from '@/lib/api';
 import { useAuthStore } from '@/lib/authStore';
@@ -34,11 +34,6 @@ interface Product {
 function ProductImagesTab({ productId }: { productId: string }) {
   const [images, setImages] = useState<any[]>([]);
   const [uploading, setUploading] = useState(false);
-
-  const fetchImages = useCallback(async () => {
-    // In a real app, you'd have a specific endpoint or include 'documents' in product fetch
-    // For now, we will just refresh the main list to see changes
-  }, []);
 
   const handleUpload = async (files: File[]) => {
     setUploading(true);
@@ -83,7 +78,8 @@ function ProductImagesTab({ productId }: { productId: string }) {
 export default function ProductsPage() {
   const { user } = useAuthStore();
   const userPermissions = user?.permissions || [];
-  const canManage = userPermissions.includes('manage:products');
+  const canManage = userPermissions.includes('ecommerce:products:update'); 
+  const canDelete = userPermissions.includes('ecommerce:products:delete');
 
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
@@ -153,7 +149,7 @@ export default function ProductsPage() {
       isActive: product.isActive,
       type: product.type,
       sku: variant?.sku || '',
-      initialStock: variant?.stock || 0, // Ensure this is set
+      initialStock: variant?.stock || 0, 
     });
     open();
   };
@@ -161,17 +157,15 @@ export default function ProductsPage() {
   const handleSubmit = async (values: typeof form.values) => {
     try {
       if (editingProduct) {
-        // --- UPDATE LOGIC ---
         await api.patch(`/ecommerce/products/${editingProduct.id}`, values);
         notifications.show({ title: 'Success', message: 'Product updated.', color: 'green' });
       } else {
-        // --- CREATE LOGIC ---
         await api.post('/ecommerce/products', values);
         notifications.show({ title: 'Success', message: 'Product created.', color: 'green' });
       }
       close();
       form.reset();
-      setEditingProduct(null); // Clear editing state
+      setEditingProduct(null); 
       fetchProducts();
     } catch (e: any) {
       notifications.show({ title: 'Error', message: e.response?.data?.message || 'Failed.', color: 'red' });
@@ -220,17 +214,13 @@ export default function ProductsPage() {
           {product.isActive ? <Badge color="green" variant="dot">Active</Badge> : <Badge color="gray">Draft</Badge>}
         </Table.Td>
         <Table.Td>
-          {canManage && (
-            <Group gap="xs">
-              {/* Edit Button (Opens Modal with Tabs) */}
-              <ActionIcon variant="subtle" onClick={() => handleOpenEdit(product)}>
-                <IconPencil size={16} />
-              </ActionIcon>
-              <ActionIcon color="red" variant="subtle" onClick={() => handleDelete(product.id)}>
-                <IconTrash size={16} />
-              </ActionIcon>
-            </Group>
-          )}
+          <Menu shadow="md" width={200}>
+            <Menu.Target><ActionIcon variant="subtle"><IconDots size={16}/></ActionIcon></Menu.Target>
+            <Menu.Dropdown>
+              {canManage && <Menu.Item leftSection={<IconPencil size={14}/>} onClick={() => handleOpenEdit(product)}>Edit Product</Menu.Item>}
+              {canDelete && <Menu.Item color="red" leftSection={<IconTrash size={14}/>} onClick={() => handleDelete(product.id)}>Delete Product</Menu.Item>}
+            </Menu.Dropdown>
+          </Menu>
         </Table.Td>
       </Table.Tr>
     );
@@ -264,13 +254,20 @@ export default function ProductsPage() {
                     required
                     {...form.getInputProps('type')}
                   />
-                   <NumberInput label="Base Price" prefix="$" min={0} decimalScale={2} required {...form.getInputProps('price')} />
+                   {/* --- FIX: decimalScale --- */}
+                   <NumberInput 
+                     label="Base Price" 
+                     prefix="$" 
+                     min={0} 
+                     decimalScale={2} 
+                     fixedDecimalScale
+                     required 
+                     {...form.getInputProps('price')} 
+                   />
                 </Group>
 
-                {/* --- 👇 SKU IS NOW ALWAYS VISIBLE 👇 --- */}
                 <Group grow>
                   <TextInput label="SKU" required {...form.getInputProps('sku')} />
-                  {/* --- 👇 STOCK IS CONDITIONAL 👇 --- */}
                   {form.values.type === 'PHYSICAL' && (
                     <NumberInput label="Stock" min={0} {...form.getInputProps('initialStock')} />
                   )}
@@ -305,7 +302,6 @@ export default function ProductsPage() {
 
       <Paper withBorder p="md" radius="md" style={{ position: 'relative' }}>
         <LoadingOverlay visible={loading} />
-        {error && <Alert icon={<IconAlertCircle size="1rem" />} title="Error" color="red">{error}</Alert>}
         <Table striped highlightOnHover>
           <Table.Thead>
             <Table.Tr>

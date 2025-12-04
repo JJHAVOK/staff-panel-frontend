@@ -1,98 +1,108 @@
 'use client';
 
+import { useState, useEffect, useCallback } from 'react';
 import { AdminLayout } from '@/components/AdminLayout';
-import api from '@/lib/api';
 import {
-  Title,
-  Alert,
-  LoadingOverlay,
-  Paper,
-  Text,
-  Table,
+  Title, Table, Paper, LoadingOverlay, Alert, TextInput, Group, Badge, Stack, Text
 } from '@mantine/core';
-import { IconAlertCircle } from '@tabler/icons-react';
-import { useEffect, useState } from 'react';
-
-// Define the type for our log data
-interface AuditLog {
-  id: string;
-  action: string;
-  targetId: string | null;
-  createdAt: string;
-  user: {
-    email: string;
-  };
-}
+import { IconSearch, IconShieldLock, IconFilter } from '@tabler/icons-react';
+import api from '@/lib/api';
+import { useAuthStore } from '@/lib/authStore';
 
 export default function AuditLogPage() {
-  const [logs, setLogs] = useState<AuditLog[]>([]);
+  const { user } = useAuthStore();
+  const canRead = user?.permissions?.includes('audit:read') || user?.permissions?.includes('system:audit:read');
+
+  const [logs, setLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [filterUser, setFilterUser] = useState('');
+  const [filterAction, setFilterAction] = useState('');
 
-  useEffect(() => {
-    const fetchLogs = async () => {
-      try {
-        setLoading(true);
-        const response = await api.get('/audit');
-        setLogs(response.data);
-      } catch (err: any) {
-        if (err.response?.status === 403) {
-          setError('You do not have permission to view the audit log.');
-        } else {
-          setError('Failed to fetch audit log data.');
-        }
-      } finally {
-        setLoading(false);
-      }
-    };
+  const fetchLogs = useCallback(async () => {
+    if (!canRead) return;
+    setLoading(true);
+    try {
+      const res = await api.get('/audit'); 
+      setLogs(res.data);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  }, [canRead]);
 
-    fetchLogs();
-  }, []);
+  useEffect(() => { fetchLogs(); }, [fetchLogs]);
 
-  const rows = logs.map((log) => (
+  const filteredLogs = logs.filter(log => {
+    const userMatch = filterUser === '' || (log.user?.email || 'system').toLowerCase().includes(filterUser.toLowerCase());
+    // Allow partial matching (e.g., "create" matches "user.create" and "project.create")
+    const actionMatch = filterAction === '' || log.action.toLowerCase().includes(filterAction.toLowerCase());
+    return userMatch && actionMatch;
+  });
+
+  const rows = filteredLogs.map((log) => (
     <Table.Tr key={log.id}>
+      <Table.Td style={{ whiteSpace: 'nowrap' }}>{new Date(log.createdAt).toLocaleString()}</Table.Td>
       <Table.Td>
-        {new Date(log.createdAt).toLocaleString()}
+         <Group gap="xs">
+            <IconShieldLock size={14} color="gray" />
+            <Text size="sm" fw={500} style={{ textTransform: 'uppercase' }}>{log.action}</Text>
+         </Group>
       </Table.Td>
-      <Table.Td>{log.user?.email || 'System'}</Table.Td>
+      <Table.Td>{log.user?.email || <Badge color="gray">System</Badge>}</Table.Td>
       <Table.Td>
-        <Text fw={700}>{log.action}</Text>
+         <Badge variant="light" color="gray" style={{ textTransform: 'none' }}>
+            {log.targetId || 'N/A'}
+         </Badge>
       </Table.Td>
       <Table.Td>
-        <Text fz="xs" ff="monospace">{log.targetId || 'N/A'}</Text>
+         <Text size="xs" c="dimmed" lineClamp={1} style={{ maxWidth: 300, fontFamily: 'monospace' }}>
+            {JSON.stringify(log.payload)}
+         </Text>
       </Table.Td>
     </Table.Tr>
   ));
 
+  if (!canRead) return <AdminLayout><Alert color="red">Access Denied</Alert></AdminLayout>;
+
   return (
     <AdminLayout>
-      <Title order={2}>System Audit Log</Title>
-      <Text c="dimmed" mb="xl">
-        A chronological log of all important actions taken in the system.
-      </Text>
+      <Title order={2} mb="xl">Security Audit Log</Title>
 
-      <Paper withBorder p="md" radius="md" style={{ position: 'relative' }}>
+      <Paper p="md" radius="md" mb="md" withBorder>
+        <Group grow>
+           <TextInput 
+              label="Filter by User" 
+              placeholder="admin@example.com" 
+              leftSection={<IconSearch size={16}/>} 
+              value={filterUser}
+              onChange={(e) => setFilterUser(e.currentTarget.value)}
+           />
+           {/* Changed to TextInput for flexible searching */}
+           <TextInput 
+              label="Filter by Action" 
+              placeholder="e.g. create, delete, product..." 
+              leftSection={<IconFilter size={16}/>} 
+              value={filterAction}
+              onChange={(e) => setFilterAction(e.currentTarget.value)}
+           />
+        </Group>
+      </Paper>
+
+      <Paper withBorder radius="md">
         <LoadingOverlay visible={loading} />
-
-        {error && (
-          <Alert icon={<IconAlertCircle size="1rem" />} title="Error" color="red">
-            {error}
-          </Alert>
-        )}
-
-        {!error && !loading && (
-          <Table striped>
-            <Table.Thead>
-              <Table.Tr>
-                <Table.Th>Timestamp</Table.Th>
-                <Table.Th>User</Table.Th>
-                <Table.Th>Action</Table.Th>
-                <Table.Th>Target ID</Table.Th>
-              </Table.Tr>
-            </Table.Thead>
-            <Table.Tbody>{rows}</Table.Tbody>
-          </Table>
-        )}
+        <Table striped highlightOnHover>
+          <Table.Thead>
+            <Table.Tr>
+              <Table.Th>Date</Table.Th>
+              <Table.Th>Action</Table.Th>
+              <Table.Th>User</Table.Th>
+              <Table.Th>Target ID</Table.Th>
+              <Table.Th>Payload</Table.Th>
+            </Table.Tr>
+          </Table.Thead>
+          <Table.Tbody>{rows}</Table.Tbody>
+        </Table>
       </Paper>
     </AdminLayout>
   );

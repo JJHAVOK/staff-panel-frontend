@@ -14,14 +14,13 @@ import {
   IconHome2, IconUsers, IconSettings, IconLogout, IconLock,
   IconFileText, IconSearch, IconUser, IconBriefcase, IconAddressBook,
   IconDiamond, IconKey, IconHeartbeat, IconSend,
-  IconCalendarTime,
-  IconChevronDown, IconUserCircle, IconHelp, IconClock,
-  IconReceipt2, IconBox, IconPackage, IconBuildingStore, IconLifebuoy,
+  IconCalendarTime, IconChevronDown, IconUserCircle, IconHelp, IconClock,
+  IconReceipt2, IconBox, IconPackage, IconBuildingStore, IconLifebuoy, IconMailForward
 } from '@tabler/icons-react';
 import api from '@/lib/api';
 import Link from 'next/link';
 import { GlobalClockWidget } from '@/components/GlobalClockWidget';
-import { NotificationBell } from '@/components/NotificationBell'; // <-- 1. IMPORT NEW COMPONENT
+import { NotificationBell } from '@/components/NotificationBell';
 
 // Search result interface
 interface SearchResult {
@@ -70,33 +69,33 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
   const [searchLoading, setSearchLoading] = useState(false);
   const [popoverOpened, setPopoverOpened] = useState(false);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
+  
   const fetchSearch = useCallback(async () => {
     if (searchTerm.length < 2) { setSearchResults([]); setPopoverOpened(false); return; }
     setSearchLoading(true); setPopoverOpened(true);
     try { const response = await api.get(`/search?q=${searchTerm}`); setSearchResults(response.data); } catch (error) { setSearchResults([]); } finally { setSearchLoading(false); }
   }, [searchTerm]);
+  
   useEffect(() => {
     const delayDebounceFn = setTimeout(() => { if (searchTerm.length > 1) { fetchSearch(); } }, 300);
     return () => clearTimeout(delayDebounceFn);
   }, [searchTerm, fetchSearch]);
-  // --- END OF SEARCH ---
 
   const handleLogout = () => {
     clearAuth();
     router.replace('/login');
   };
 
-  // --- HYDRATION SKELETON ---
-  if (!isHydrated) {
+  if (!isHydrated || !token) {
     return <Skeleton height="100vh" />;
   }
-  if (!token) {
-    return <Skeleton height="100vh" />;
-  }
+  
+  // --- HELPER FOR PERMISSIONS ---
+  const hasPerm = (perm: string) => userPermissions.includes(perm);
 
   return (
     <AppShell
-      header={{ height: 0 }} // No default header
+      header={{ height: 0 }}
       navbar={{ width: 250, breakpoint: 'sm', collapsed: { mobile: !opened } }}
       padding="md"
     >
@@ -113,52 +112,65 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 
         <NavLink href="/" label="Dashboard" leftSection={<IconHome2 size="1rem" stroke={1.5} />} active={pathname === '/'} />
         
-        {userPermissions.includes('crm:read') && (
-          <NavLink href="/crm/organizations" label="CRM" leftSection={<IconBriefcase size="1rem" stroke={1.5} />} active={pathname.startsWith('/crm')} />
+        {/* --- HR & STAFF --- */}
+        {(hasPerm('user:read') || hasPerm('rbac:read') || hasPerm('hr:timesheet:own') || hasPerm('hr:leave:own')) && (
+          <NavLink label="HR & Staff" leftSection={<IconUsers size="1rem" stroke={1.5} />} defaultOpened>
+            {hasPerm('user:read') && <NavLink href="/users" label="Staff Directory" active={pathname === '/users'} />}
+            {hasPerm('rbac:read') && <NavLink href="/roles" label="Roles & Permissions" active={pathname === '/roles'} />}
+            {(hasPerm('hr:timesheet:own') || hasPerm('hr:timesheet:manage')) && <NavLink href="/timesheets" label="Timesheets" active={pathname === '/timesheets'} />}
+            {(hasPerm('hr:leave:own') || hasPerm('hr:leave:manage')) && <NavLink href="/leave" label="Leave Management" active={pathname === '/leave'} />}
+          </NavLink>
         )}
-        {userPermissions.includes('read:products') && (
-          <NavLink href="/ecommerce/products" label="Product Catalog" leftSection={<IconBox size="1rem" stroke={1.5} />} active={pathname === '/ecommerce/products'} />
+
+        {/* --- CRM & SALES --- */}
+        {(hasPerm('crm:orgs:read') || hasPerm('crm:contacts:read') || hasPerm('crm:deals:read')) && (
+           <NavLink label="CRM & Sales" leftSection={<IconBriefcase size="1rem" stroke={1.5} />} defaultOpened>
+             {hasPerm('crm:orgs:read') && <NavLink href="/crm/organizations" label="Organizations" active={pathname === '/crm/organizations'} />}
+             {/* NEW: Separate Pages */}
+             {hasPerm('crm:contacts:read') && <NavLink href="/crm/contacts" label="Contacts" active={pathname === '/crm/contacts'} />}
+             {hasPerm('crm:deals:read') && <NavLink href="/crm/opportunities" label="Deals" active={pathname === '/crm/opportunities'} />}
+           </NavLink>
         )}
-        {userPermissions.includes('read:orders') && (
-          <NavLink href="/ecommerce/orders" label="Orders & Logistics" leftSection={<IconPackage size="1rem" stroke={1.5} />} active={pathname === '/ecommerce/orders'} />
+
+        {/* --- E-COMMERCE --- */}
+        {(hasPerm('ecommerce:products:read') || hasPerm('ecommerce:orders:read') || hasPerm('projects:read')) && (
+          <NavLink label="E-commerce" leftSection={<IconBox size="1rem" stroke={1.5} />} defaultOpened>
+             {hasPerm('ecommerce:products:read') && <NavLink href="/ecommerce/products" label="Product Catalog" active={pathname === '/ecommerce/products'} />}
+             {hasPerm('ecommerce:orders:read') && <NavLink href="/ecommerce/orders" label="Orders" active={pathname === '/ecommerce/orders'} />}
+             {hasPerm('projects:read') && <NavLink href="/projects" label="Projects (Kanban)" active={pathname === '/projects'} />}
+          </NavLink>
         )}
-        {userPermissions.includes('read:billing') && (
-          <NavLink href="/billing" label="Billing & Invoices" leftSection={<IconReceipt2 size="1rem" stroke={1.5} />} active={pathname === '/billing'} />
-        )}
-        {userPermissions.includes('read:helpdesk') && (
-  		  <NavLink href="/helpdesk" label="Support Helpdesk" leftSection={<IconLifebuoy size="1rem" stroke={1.5} />} active={pathname === '/helpdesk'} />
-		)}
-        {userPermissions.includes('user:read') && (
-          <NavLink href="/users" label="Staff Management" leftSection={<IconUsers size="1rem" stroke={1.5} />} active={pathname === '/users'} />
-        )}
-        {userPermissions.includes('rbac:read') && ( 
-          <NavLink href="/roles" label="Role Management" leftSection={<IconLock size="1rem" stroke={1.5} />} active={pathname === '/roles'} />
-        )}
-        {(userPermissions.includes('own:leave') || userPermissions.includes('manage:leave')) && (
-          <NavLink href="/leave" label="Leave Management" leftSection={<IconCalendarTime size="1rem" stroke={1.5} />} active={pathname === '/leave'} />
-        )}
-        {(userPermissions.includes('own:timesheets') || userPermissions.includes('manage:timesheets')) && (
-          <NavLink href="/timesheets" label="Timesheets" leftSection={<IconClock size="1rem" stroke={1.5} />} active={pathname === '/timesheets'} />
-        )}
-        {userPermissions.includes('read:procurement') && (
- 		  <NavLink href="/procurement" label="Procurement" leftSection={<IconBuildingStore size="1rem" stroke={1.5} />} active={pathname === '/procurement'} />
-		)}
-        {userPermissions.includes('read:monitoring') && (
-          <NavLink href="/status" label="System Status" leftSection={<IconHeartbeat size="1rem" stroke={1.5} />} active={pathname === '/status'} />
-        )}
-        {userPermissions.includes('audit:read') && (
-          <NavLink href="/audit" label="Audit Log" leftSection={<IconFileText size="1rem" stroke={1.5} />} active={pathname === '/audit'} />
-        )}
-        {userPermissions.includes('settings:read') && (
-          <NavLink href="/settings" label="Settings" leftSection={<IconSettings size="1rem" stroke={1.5} />} active={pathname === '/settings'} />
-        )}
-        {userPermissions.includes('read:webhooks') && (
-          <NavLink href="/webhooks" label="Webhooks" leftSection={<IconSend size="1rem" stroke={1.5} />} active={pathname === '/webhooks'} />
-        )}
-        {userPermissions.includes('read:api-keys') && (
-          <NavLink href="/api-keys" label="API Keys" leftSection={<IconKey size="1rem" stroke={1.5} />} active={pathname === '/api-keys'} />
+
+        {/* --- FINANCE & SUPPLY --- */}
+        {(hasPerm('finance:billing:read') || hasPerm('procurement:vendors:read') || hasPerm('procurement:orders:read')) && (
+          <NavLink label="Finance & Supply" leftSection={<IconReceipt2 size="1rem" stroke={1.5} />}>
+             {hasPerm('finance:billing:read') && <NavLink href="/billing" label="Billing & Invoices" active={pathname === '/billing'} />}
+             
+             {/* --- PROCUREMENT SEPARATED --- */}
+             {hasPerm('procurement:vendors:read') && <NavLink href="/procurement/vendors" label="Vendors" active={pathname === '/procurement/vendors'} />}
+             {hasPerm('procurement:orders:read') && <NavLink href="/procurement/orders" label="Purchase Orders" active={pathname === '/procurement/orders'} />}
+          </NavLink>
         )}
         
+        {/* --- MARKETING --- */}
+        {hasPerm('marketing:campaigns:read') && (
+           <NavLink href="/marketing" label="Marketing" leftSection={<IconMailForward size="1rem" stroke={1.5} />} active={pathname === '/marketing'} />
+        )}
+
+        {/* --- SUPPORT --- */}
+        {hasPerm('helpdesk:read') && (
+           <NavLink href="/helpdesk" label="Helpdesk" leftSection={<IconLifebuoy size="1rem" stroke={1.5} />} active={pathname === '/helpdesk'} />
+        )}
+
+        {/* --- SYSTEM --- */}
+        <NavLink label="System" leftSection={<IconSettings size="1rem" stroke={1.5} />}>
+           {hasPerm('system:audit:read') && <NavLink href="/audit" label="Audit Logs" active={pathname === '/audit'} />}
+           {hasPerm('system:settings:read') && <NavLink href="/settings" label="Platform Settings" active={pathname === '/settings'} />}
+           {hasPerm('system:monitoring:read') && <NavLink href="/status" label="System Health" active={pathname === '/status'} />}
+           {hasPerm('system:webhooks:read') && <NavLink href="/webhooks" label="Webhooks" active={pathname === '/webhooks'} />}
+           {hasPerm('system:api:read') && <NavLink href="/api-keys" label="API Keys" active={pathname === '/api-keys'} />}
+        </NavLink>
+
       </AppShell.Navbar>
 
       {/* --- MAIN CONTENT AREA --- */}
@@ -271,10 +283,9 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
              {isHydrated && userPermissions.includes('own:timesheets') && (
               <GlobalClockWidget />
             )}
-
-            {/* --- 👇 2. ADD NOTIFICATION BELL HERE 👇 --- */}
+            
+            {/* Notification Bell */}
             <NotificationBell />
-            {/* --- 👆 END ADD 👆 --- */}
             
             {/* Profile Menu */}
             <Menu shadow="md" width={200}>

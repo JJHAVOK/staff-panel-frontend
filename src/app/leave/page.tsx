@@ -1,253 +1,190 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { AdminLayout } from '@/components/AdminLayout';
 import {
-  Title, Text, Button, Group, Table, Modal, TextInput, Select,
-  Loader, ActionIcon, Stack, Paper, LoadingOverlay, Alert, Tabs,
-  Badge, Textarea,
+  Title, Text, Button, Group, Table, Modal, TextInput, Stack, Paper, LoadingOverlay, 
+  Alert, Tabs, Select, Badge, Menu, ActionIcon, Textarea
 } from '@mantine/core';
+import { DateInput } from '@mantine/dates';
 import { useForm } from '@mantine/form';
 import { notifications } from '@mantine/notifications';
-import { IconAlertCircle, IconPlus, IconCheck, IconX } from '@tabler/icons-react';
+import { 
+  IconPlus, IconTrash, IconDots, IconCheck, IconX, IconCalendarTime 
+} from '@tabler/icons-react';
 import api from '@/lib/api';
+import { useDisclosure } from '@mantine/hooks';
 import { useAuthStore } from '@/lib/authStore';
-import { DatePickerInput } from '@mantine/dates'; // Import DatePicker
 
-// --- Types ---
-interface LeaveRequest {
-  id: string;
-  type: string;
-  status: 'PENDING' | 'APPROVED' | 'DENIED';
-  startDate: string;
-  endDate: string;
-  reason: string | null;
-  createdAt: string;
-  // For 'own' requests
-  reviewer?: { firstName: string | null; lastName: string | null; };
-  // For 'all' requests (admin)
-  staffUser?: { firstName: string | null; lastName: string | null; email: string; };
-}
-
-// --- Helper Components ---
-const statusColors = {
-  PENDING: 'yellow',
-  APPROVED: 'green',
-  DENIED: 'red',
-};
-
-// --- Main Page Component ---
 export default function LeavePage() {
   const { user } = useAuthStore();
   const userPermissions = user?.permissions || [];
-  const canManage = userPermissions.includes('manage:leave');
+  
+  const canCreate = userPermissions.includes('hr:leave:own');
+  const canManage = userPermissions.includes('hr:leave:manage');
 
-  const [myRequests, setMyRequests] = useState<LeaveRequest[]>([]);
-  const [allRequests, setAllRequests] = useState<LeaveRequest[]>([]);
+  const [myRequests, setMyRequests] = useState<any[]>([]);
+  const [allRequests, setAllRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [modalOpened, setModalOpened] = useState(false);
+  
+  const [createModalOpen, { open: openCreate, close: closeCreate }] = useDisclosure(false);
 
   const form = useForm({
-    initialValues: {
-      type: '',
-      startDate: null as Date | null,
-      endDate: null as Date | null,
-      reason: '',
-    },
-    validate: {
-      type: (val) => (val ? null : 'Request type is required'),
-      startDate: (val) => (val ? null : 'Start date is required'),
-      endDate: (val) => (val ? null : 'End date is required'),
-    },
+    initialValues: { type: 'VACATION', startDate: new Date(), endDate: new Date(), reason: '' },
+    validate: { reason: (v) => (v.length < 3 ? 'Reason required' : null) },
   });
 
-  // --- Data Fetching ---
-  const fetchAllRequests = async () => {
-    if (!canManage) return;
-    try {
-      const res = await api.get('/leave/all');
-      setAllRequests(res.data);
-    } catch (e) {
-      setError('Could not load all requests.');
-    }
-  };
-
-  const fetchMyRequests = async () => {
-    try {
-      const res = await api.get('/leave/own');
-      setMyRequests(res.data);
-    } catch (e) {
-      setError('Could not load your requests.');
-    }
-  };
-
-  const loadData = () => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
-    setError(null);
-    Promise.all([fetchMyRequests(), fetchAllRequests()]).finally(() => {
-      setLoading(false);
-    });
-  };
-
-  useEffect(() => {
-    loadData();
-  }, [canManage]);
-
-  // --- Handlers ---
-  const handleSubmitRequest = async (values: typeof form.values) => {
     try {
-      await api.post('/leave/own', {
-        ...values,
-        startDate: values.startDate?.toISOString(),
-        endDate: values.endDate?.toISOString(),
-      });
-      notifications.show({ title: 'Request Submitted', message: 'Your time off request has been submitted for review.', color: 'green' });
-      setModalOpened(false);
-      form.reset();
-      loadData(); // Refresh list
+      // 1. Fetch My Requests (Fixed Endpoint: /leave/mine)
+      if (canCreate) {
+        const res = await api.get('/leave/mine');
+        setMyRequests(res.data);
+      }
+      
+      // 2. Fetch All Requests (If Manager)
+      if (canManage) {
+        const res = await api.get('/leave');
+        setAllRequests(res.data);
+      }
     } catch (e) {
-      notifications.show({ title: 'Error', message: 'Could not submit request.', color: 'red' });
+      console.error(e);
+      notifications.show({ title: 'Error', message: 'Could not load requests.', color: 'red' });
+    } finally {
+      setLoading(false);
+    }
+  }, [canCreate, canManage]);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  const handleCreate = async (values: typeof form.values) => {
+    try {
+      await api.post('/leave', values);
+      notifications.show({ title: 'Submitted', message: 'Leave request sent.', color: 'green' });
+      closeCreate();
+      form.reset();
+      fetchData();
+    } catch (e) {
+      notifications.show({ title: 'Error', message: 'Failed to submit request.', color: 'red' });
     }
   };
 
-  const handleUpdateStatus = async (id: string, status: 'APPROVED' | 'DENIED') => {
+  const handleStatusUpdate = async (id: string, status: string) => {
     try {
       await api.patch(`/leave/${id}/status`, { status });
-      notifications.show({ title: 'Request Updated', message: `Request has been ${status.toLowerCase()}.`, color: 'blue' });
-      loadData(); // Refresh list
+      notifications.show({ title: 'Updated', message: `Request ${status.toLowerCase()}.`, color: 'blue' });
+      fetchData();
     } catch (e) {
-      notifications.show({ title: 'Error', message: 'Could not update request status.', color: 'red' });
+      notifications.show({ title: 'Error', message: 'Update failed.', color: 'red' });
     }
   };
 
-  // --- Render Functions for Tables ---
-  const myRequestsRows = myRequests.map((req) => (
-    <Table.Tr key={req.id}>
-      <Table.Td><Badge color={statusColors[req.status]}>{req.status}</Badge></Table.Td>
-      <Table.Td>{req.type}</Table.Td>
-      <Table.Td>{new Date(req.startDate).toLocaleDateString()}</Table.Td>
-      <Table.Td>{new Date(req.endDate).toLocaleDateString()}</Table.Td>
-      <Table.Td>{req.reason || '-'}</Table.Td>
-      <Table.Td>{req.reviewer ? `${req.reviewer.firstName} ${req.reviewer.lastName}` : '-'}</Table.Td>
-    </Table.Tr>
-  ));
+  const handleDelete = async (id: string) => {
+    if (!confirm('Cancel this request?')) return;
+    try {
+      await api.delete(`/leave/${id}`);
+      notifications.show({ title: 'Deleted', message: 'Request cancelled.', color: 'gray' });
+      fetchData();
+    } catch (e) {
+      notifications.show({ title: 'Error', message: 'Delete failed.', color: 'red' });
+    }
+  };
 
-  const allRequestsRows = allRequests.map((req) => (
+  const getStatusBadge = (status: string) => {
+    if (status === 'APPROVED') return <Badge color="green">Approved</Badge>;
+    if (status === 'DENIED') return <Badge color="red">Denied</Badge>;
+    return <Badge color="yellow">Pending</Badge>;
+  };
+
+  // --- Render Rows ---
+  const renderRows = (requests: any[], showUser: boolean) => requests.map((req) => (
     <Table.Tr key={req.id}>
-      <Table.Td><Badge color={statusColors[req.status]}>{req.status}</Badge></Table.Td>
-      <Table.Td>{req.staffUser?.firstName} {req.staffUser?.lastName}</Table.Td>
-      <Table.Td>{req.type}</Table.Td>
-      <Table.Td>{new Date(req.startDate).toLocaleDateString()}</Table.Td>
-      <Table.Td>{new Date(req.endDate).toLocaleDateString()}</Table.Td>
+      {showUser && <Table.Td>{req.staffUser?.firstName} {req.staffUser?.lastName}</Table.Td>}
+      <Table.Td><Badge variant="outline">{req.type}</Badge></Table.Td>
+      <Table.Td>{new Date(req.startDate).toLocaleDateString()} - {new Date(req.endDate).toLocaleDateString()}</Table.Td>
+      <Table.Td style={{ maxWidth: 200 }}><Text truncate size="sm">{req.reason}</Text></Table.Td>
+      <Table.Td>{getStatusBadge(req.status)}</Table.Td>
       <Table.Td>
-        {req.status === 'PENDING' && (
-          <Group gap="xs">
-            <ActionIcon color="green" onClick={() => handleUpdateStatus(req.id, 'APPROVED')}>
-              <IconCheck size={16} />
-            </ActionIcon>
-            <ActionIcon color="red" onClick={() => handleUpdateStatus(req.id, 'DENIED')}>
-              <IconX size={16} />
-            </ActionIcon>
-          </Group>
-        )}
+        <Menu shadow="md" width={200}>
+          <Menu.Target>
+            <ActionIcon variant="subtle"><IconDots size={16} /></ActionIcon>
+          </Menu.Target>
+          <Menu.Dropdown>
+            {/* Manager Actions */}
+            {canManage && req.status === 'PENDING' && (
+              <>
+                <Menu.Label>Review</Menu.Label>
+                <Menu.Item leftSection={<IconCheck size={14} />} color="green" onClick={() => handleStatusUpdate(req.id, 'APPROVED')}>Approve</Menu.Item>
+                <Menu.Item leftSection={<IconX size={14} />} color="red" onClick={() => handleStatusUpdate(req.id, 'DENIED')}>Deny</Menu.Item>
+                <Menu.Divider />
+              </>
+            )}
+            
+            {/* Owner Actions */}
+            <Menu.Label>Manage</Menu.Label>
+            <Menu.Item leftSection={<IconTrash size={14} />} color="red" onClick={() => handleDelete(req.id)}>
+              {req.status === 'PENDING' ? 'Cancel Request' : 'Delete Record'}
+            </Menu.Item>
+          </Menu.Dropdown>
+        </Menu>
       </Table.Td>
     </Table.Tr>
   ));
 
   return (
     <AdminLayout>
-      {/* --- Request Modal --- */}
-      <Modal opened={modalOpened} onClose={() => setModalOpened(false)} title="Request Time Off">
-        <form onSubmit={form.onSubmit(handleSubmitRequest)}>
+      <Modal opened={createModalOpen} onClose={closeCreate} title="Request Time Off">
+        <form onSubmit={form.onSubmit(handleCreate)}>
           <Stack>
-            <Select
-              label="Request Type"
-              placeholder="Select a type"
-              data={['VACATION', 'SICK', 'PERSONAL', 'BEREAVEMENT']}
-              required
-              {...form.getInputProps('type')}
-            />
-            <DatePickerInput
-              label="Start Date"
-              placeholder="Select start date"
-              required
-              {...form.getInputProps('startDate')}
-            />
-            <DatePickerInput
-              label="End Date"
-              placeholder="Select end date"
-              required
-              {...form.getInputProps('endDate')}
-            />
-            <Textarea
-              label="Reason (Optional)"
-              placeholder="e.g., Family vacation"
-              {...form.getInputProps('reason')}
-            />
-            <Button type="submit" mt="md">
-              Submit Request
-            </Button>
+            <Select label="Type" data={['VACATION', 'SICK', 'PERSONAL']} required {...form.getInputProps('type')} />
+            <Group grow>
+               <DateInput label="Start Date" required {...form.getInputProps('startDate')} />
+               <DateInput label="End Date" required {...form.getInputProps('endDate')} />
+            </Group>
+            <Textarea label="Reason" required {...form.getInputProps('reason')} />
+            <Button type="submit">Submit Request</Button>
           </Stack>
         </form>
       </Modal>
 
-      {/* --- Page Header --- */}
       <Group justify="space-between" mb="xl">
-        <Title order={2}>Leave Management</Title>
-        <Button onClick={() => setModalOpened(true)} leftSection={<IconPlus size={16} />}>
-          Request Time Off
-        </Button>
+        <Group>
+           <IconCalendarTime size={32} />
+           <Title order={2}>Leave Management</Title>
+        </Group>
+        {canCreate && <Button leftSection={<IconPlus size={16} />} onClick={openCreate}>Request Time Off</Button>}
       </Group>
 
-      {/* --- Page Content --- */}
-      <Paper withBorder p="md" radius="md" style={{ position: 'relative' }}>
+      <Paper withBorder radius="md" style={{ position: 'relative', minHeight: 200 }}>
         <LoadingOverlay visible={loading} />
         
-        {error && (
-          <Alert icon={<IconAlertCircle size="1rem" />} title="Error" color="red">
-            {error}
-          </Alert>
-        )}
-
-        <Tabs defaultValue="my-requests">
+        <Tabs defaultValue="mine">
           <Tabs.List>
-            <Tabs.Tab value="my-requests">My Requests</Tabs.Tab>
-            {canManage && <Tabs.Tab value="all-requests">All Requests</Tabs.Tab>}
+            {canCreate && <Tabs.Tab value="mine">My Requests</Tabs.Tab>}
+            {canManage && <Tabs.Tab value="all">All Requests (Admin)</Tabs.Tab>}
           </Tabs.List>
 
-          <Tabs.Panel value="my-requests" pt="md">
-            <Table striped>
-              <Table.Thead>
-                <Table.Tr>
-                  <Table.Th>Status</Table.Th>
-                  <Table.Th>Type</Table.Th>
-                  <Table.Th>Start Date</Table.Th>
-                  <Table.Th>End Date</Table.Th>
-                  <Table.Th>Reason</Table.Th>
-                  <Table.Th>Reviewed By</Table.Th>
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>{myRequestsRows}</Table.Tbody>
-            </Table>
-          </Tabs.Panel>
+          {canCreate && (
+            <Tabs.Panel value="mine" pt="md">
+               {myRequests.length === 0 ? (
+                 <Text c="dimmed" ta="center" py="xl">No leave requests found.</Text>
+               ) : (
+                 <Table striped highlightOnHover>
+                   <Table.Thead><Table.Tr><Table.Th>Type</Table.Th><Table.Th>Dates</Table.Th><Table.Th>Reason</Table.Th><Table.Th>Status</Table.Th><Table.Th>Actions</Table.Th></Table.Tr></Table.Thead>
+                   <Table.Tbody>{renderRows(myRequests, false)}</Table.Tbody>
+                 </Table>
+               )}
+            </Tabs.Panel>
+          )}
 
           {canManage && (
-            <Tabs.Panel value="all-requests" pt="md">
-              <Table striped>
-                <Table.Thead>
-                  <Table.Tr>
-                    <Table.Th>Status</Table.Th>
-                    <Table.Th>Employee</Table.Th>
-                    <Table.Th>Type</Table.Th>
-                    <Table.Th>Start Date</Table.Th>
-                    <Table.Th>End Date</Table.Th>
-                    <Table.Th>Actions</Table.Th>
-                  </Table.Tr>
-                </Table.Thead>
-                <Table.Tbody>{allRequestsRows}</Table.Tbody>
-              </Table>
-            </Tabs.Panel> // <-- THIS WAS THE TYPO (was </Table.Panel>)
+            <Tabs.Panel value="all" pt="md">
+               <Table striped highlightOnHover>
+                 <Table.Thead><Table.Tr><Table.Th>Staff</Table.Th><Table.Th>Type</Table.Th><Table.Th>Dates</Table.Th><Table.Th>Reason</Table.Th><Table.Th>Status</Table.Th><Table.Th>Actions</Table.Th></Table.Tr></Table.Thead>
+                 <Table.Tbody>{renderRows(allRequests, true)}</Table.Tbody>
+               </Table>
+            </Tabs.Panel>
           )}
         </Tabs>
       </Paper>
