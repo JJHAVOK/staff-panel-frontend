@@ -5,19 +5,170 @@ import { AdminLayout } from '@/components/AdminLayout';
 import {
   Title, Text, Button, Group, Paper, LoadingOverlay, Alert, Stack,
   Badge, ActionIcon, Modal, TextInput, Textarea, Select, NumberInput, Switch,
-  Tabs, Grid, Card, Progress, ThemeIcon, Divider, Menu, TagsInput
+  Tabs, Grid, Progress, ThemeIcon, Divider, Menu, TagsInput, Timeline, Code, Image, SimpleGrid, rem
 } from '@mantine/core';
+import { Dropzone, MIME_TYPES } from '@mantine/dropzone';
 import { useForm } from '@mantine/form';
 import { notifications } from '@mantine/notifications';
 import { 
   IconPlus, IconTrash, IconPencil, IconArrowLeft, IconEye, IconEyeOff, 
-  IconLayoutKanban, IconChartPie, IconSettings, IconBuildingSkyscraper, 
-  IconUser, IconReceipt2, IconClock, IconDots
+  IconLayoutBoard, IconChartPie, IconSettings, IconBuildingSkyscraper, 
+  IconUser, IconReceipt2, IconClock, IconDots, IconTimeline, IconCode, 
+  IconPhoto, IconCheck, IconUpload, IconX, IconFile, IconLayoutKanban
 } from '@tabler/icons-react';
 import api from '@/lib/api';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
+
+// --- TIMELINE / UPDATES COMPONENT ---
+function ProjectUpdatesTab({ projectId, canManage }: { projectId: string, canManage: boolean }) {
+  const [updates, setUpdates] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [files, setFiles] = useState<File[]>([]);
+
+  const form = useForm({
+    initialValues: { title: '', description: '', codeSnippet: '', isPublic: true },
+    validate: { title: (val) => (val.length < 2 ? 'Title required' : null) },
+  });
+
+  const fetchUpdates = async () => {
+    setLoading(true);
+    try {
+      const res = await api.get(`/projects/${projectId}/updates`);
+      setUpdates(res.data);
+    } catch (e) { console.error(e); } finally { setLoading(false); }
+  };
+
+  useEffect(() => { fetchUpdates(); }, [projectId]);
+
+  const handlePostUpdate = async (values: typeof form.values) => {
+    setUploading(true);
+    try {
+      // 1. Create the Text Update
+      const res = await api.post(`/projects/${projectId}/updates`, values);
+      const newUpdateId = res.data.id;
+
+      // 2. Upload Files (if any)
+      if (files.length > 0) {
+        for (const file of files) {
+          const formData = new FormData();
+          formData.append('file', file);
+          await api.post(`/documents/upload/update/${newUpdateId}`, formData, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+          });
+        }
+      }
+
+      notifications.show({ title: 'Posted', message: 'Update added to timeline.', color: 'green' });
+      setModalOpen(false);
+      form.reset();
+      setFiles([]); 
+      fetchUpdates();
+    } catch (e) {
+      notifications.show({ title: 'Error', message: 'Failed to post update.', color: 'red' });
+    } finally { setUploading(false); }
+  };
+
+  return (
+    <Stack>
+       {canManage && (
+         <Group justify="flex-end">
+           <Button leftSection={<IconPlus size={16} />} onClick={() => setModalOpen(true)}>Post Update</Button>
+         </Group>
+       )}
+       
+       <Modal opened={modalOpen} onClose={() => setModalOpen(false)} title="Post Project Update" size="lg">
+         <form onSubmit={form.onSubmit(handlePostUpdate)}>
+           <Stack>
+             <TextInput label="Title" placeholder="e.g. Database Schema Finalized" required {...form.getInputProps('title')} />
+             <Textarea label="Description" minRows={3} {...form.getInputProps('description')} />
+             
+             <div>
+               <Text size="sm" fw={500} mb={4}>Images / Screenshots (Optional)</Text>
+               <Dropzone
+                 onDrop={setFiles}
+                 onReject={() => notifications.show({ title: 'Error', message: 'File rejected', color: 'red' })}
+                 maxSize={5 * 1024 ** 2}
+                 accept={[MIME_TYPES.png, MIME_TYPES.jpeg, MIME_TYPES.pdf]}
+               >
+                 <Group justify="center" gap="xl" style={{ minHeight: rem(80), pointerEvents: 'none' }}>
+                    <Dropzone.Accept><IconUpload size={30} stroke={1.5} /></Dropzone.Accept>
+                    <Dropzone.Reject><IconX size={30} stroke={1.5} /></Dropzone.Reject>
+                    <Dropzone.Idle><IconPhoto size={30} stroke={1.5} /></Dropzone.Idle>
+                    <div>
+                      <Text size="sm" inline>Drag images here or click to select</Text>
+                      <Text size="xs" c="dimmed" inline mt={7}>Selected: {files.length} files</Text>
+                    </div>
+                  </Group>
+               </Dropzone>
+               {files.length > 0 && (
+                 <Group mt="xs">
+                   {files.map((file, index) => (
+                     <Badge key={index} size="sm" variant="outline" rightSection={<IconX size={10} style={{cursor: 'pointer'}} onClick={() => setFiles(files.filter((_, i) => i !== index))} />}>
+                       {file.name}
+                     </Badge>
+                   ))}
+                 </Group>
+               )}
+             </div>
+
+             <Textarea 
+               label="Code Snippet (Optional)" 
+               minRows={3} 
+               styles={{ input: { fontFamily: 'monospace' } }}
+               leftSection={<IconCode size={14}/>} 
+               {...form.getInputProps('codeSnippet')} 
+             />
+             <Switch label="Visible to Client" {...form.getInputProps('isPublic', { type: 'checkbox' })} />
+             <Button type="submit" loading={uploading}>Post Update</Button>
+           </Stack>
+         </form>
+       </Modal>
+
+       <Timeline active={updates.length} bulletSize={24} lineWidth={2}>
+         {updates.map((update) => (
+           <Timeline.Item 
+             key={update.id} 
+             bullet={<ThemeIcon size={22} radius="xl" color={update.isPublic ? 'teal' : 'gray'}><IconCheck size={12}/></ThemeIcon>}
+             title={
+               <Group>
+                 <Text fw={500}>{update.title}</Text>
+                 {!update.isPublic && <Badge size="xs" color="gray">Internal</Badge>}
+               </Group>
+             }
+           >
+             <Text c="dimmed" size="sm" mb="sm">{update.description}</Text>
+             
+             {update.documents && update.documents.length > 0 && (
+                <SimpleGrid cols={3} spacing="xs" mb="sm">
+                  {update.documents.map((doc: any) => (
+                    <Paper key={doc.id} withBorder p={4}>
+                        <Stack align="center" gap={0} py="xs">
+                           <IconFile size={24} color="gray" />
+                           <Text size="xs" lineClamp={1} style={{ maxWidth: '100%' }}>{doc.name}</Text>
+                        </Stack>
+                    </Paper>
+                  ))}
+                </SimpleGrid>
+             )}
+             
+             {update.codeSnippet && (
+               <Paper withBorder p="xs" bg="dark.8" mt="xs" radius="sm">
+                 <Code block color="dark">{update.codeSnippet}</Code>
+               </Paper>
+             )}
+             <Text size="xs" mt={4} c="dimmed">
+               {new Date(update.createdAt).toLocaleString()} • {update.staffUser?.firstName}
+             </Text>
+           </Timeline.Item>
+         ))}
+       </Timeline>
+    </Stack>
+  );
+}
 
 function InfoCard({ icon, label, value, subValue }: any) {
   return (
@@ -76,14 +227,12 @@ export default function ProjectDashboard() {
       const res = await api.get(`/projects/${id}`);
       setProject(res.data);
       
-      // Init settings form
       settingsForm.setValues({
         name: res.data.name,
         description: res.data.description || '',
         status: res.data.status,
       });
 
-      // Collect tags
       const usedTags = new Set<string>(data);
       res.data.columns.forEach((col: any) => {
         col.tasks.forEach((task: any) => {
@@ -187,7 +336,7 @@ export default function ProjectDashboard() {
   };
 
   const handleDeleteProject = async () => {
-     if (!confirm('PERMANENTLY delete this project? This cannot be undone.')) return;
+     if (!confirm('PERMANENTLY delete this project?')) return;
      try {
         await api.delete(`/projects/${id}`);
         notifications.show({ title: 'Deleted', message: 'Project removed.', color: 'green' });
@@ -224,6 +373,7 @@ export default function ProjectDashboard() {
       <Modal opened={taskModalOpen} onClose={() => setTaskModalOpen(false)} title={editingTask ? 'Edit Task' : 'New Task'} size="lg">
         <form onSubmit={taskForm.onSubmit(handleSaveTask)}>
           <Stack>
+            {/* --- 👇 FIX: Updated form variable to taskForm 👇 --- */}
             <TextInput label="Title" required {...taskForm.getInputProps('title')} />
             <Textarea label="Description" {...taskForm.getInputProps('description')} />
             <Group grow>
@@ -231,22 +381,20 @@ export default function ProjectDashboard() {
               <NumberInput label="Est. Hours" min={0} {...taskForm.getInputProps('estimatedHours')} />
             </Group>
             
-            {/* --- 👇 REPLACED MultiSelect WITH TagsInput 👇 --- */}
             <TagsInput
               label="Tags"
               placeholder="Select or type new tags..."
               data={data}
               {...taskForm.getInputProps('tags')}
             />
-            {/* --- 👆 END OF FIX 👆 --- */}
 
             <Switch label="Visible to Client" {...taskForm.getInputProps('isPublic', { type: 'checkbox' })} />
+            {/* --- 👆 END OF FIX 👆 --- */}
             <Button type="submit">Save</Button>
           </Stack>
         </form>
       </Modal>
 
-      {/* Column Modal */}
       <Modal opened={columnModalOpen} onClose={() => setColumnModalOpen(false)} title={editingColumn ? 'Edit Stage' : 'New Stage'}>
         <form onSubmit={columnForm.onSubmit(handleSaveColumn)}>
           <Stack>
@@ -277,8 +425,13 @@ export default function ProjectDashboard() {
       <Tabs defaultValue="overview">
         <Tabs.List>
           <Tabs.Tab value="overview" leftSection={<IconChartPie size={14} />}>Overview</Tabs.Tab>
-          <Tabs.Tab value="features" leftSection={<IconLayoutKanban size={14} />}>Features (Board)</Tabs.Tab>
-          <Tabs.Tab value="settings" leftSection={<IconSettings size={14} />}>Settings</Tabs.Tab>
+          <Tabs.Tab value="timeline" leftSection={<IconTimeline size={14} />}>Timeline / Updates</Tabs.Tab>
+          <Tabs.Tab value="features" leftSection={<IconLayoutBoard size={14} />}>Features (Board)</Tabs.Tab>
+          
+          {viewMode === 'admin' && (
+            <Tabs.Tab value="settings" leftSection={<IconSettings size={14} />}>Settings</Tabs.Tab>
+          )}
+
         </Tabs.List>
 
         <Tabs.Panel value="overview" pt="md">
@@ -317,6 +470,10 @@ export default function ProjectDashboard() {
                </Stack>
             </Grid.Col>
           </Grid>
+        </Tabs.Panel>
+
+        <Tabs.Panel value="timeline" pt="md">
+           <ProjectUpdatesTab projectId={id as string} canManage={viewMode === 'admin'} />
         </Tabs.Panel>
 
         <Tabs.Panel value="features" pt="md">
@@ -386,28 +543,30 @@ export default function ProjectDashboard() {
           </DragDropContext>
         </Tabs.Panel>
 
-        <Tabs.Panel value="settings" pt="md">
-          <Paper withBorder p="md" radius="md">
-            <Title order={4} mb="md">Project Settings</Title>
-            <form onSubmit={settingsForm.onSubmit(handleUpdateSettings)}>
-              <Stack>
-                <TextInput label="Project Name" {...settingsForm.getInputProps('name')} />
-                <Textarea label="Description" minRows={3} {...settingsForm.getInputProps('description')} />
-                <Select 
-                  label="Status" 
-                  data={['Planning', 'Preparing', 'In Progress', 'Reviewing', 'Finalizing', 'Completed', 'Delivered', 'Sold', 'Active', 'Archived']} 
-                  {...settingsForm.getInputProps('status')} 
-                />
-                <Group justify="flex-end">
-                   <Button type="submit">Save Changes</Button>
-                </Group>
-              </Stack>
-            </form>
-            <Divider my="xl" />
-            <Title order={4} c="red" mb="md">Danger Zone</Title>
-            <Button color="red" variant="outline" onClick={handleDeleteProject}>Delete Project</Button>
-          </Paper>
-        </Tabs.Panel>
+        {viewMode === 'admin' && (
+          <Tabs.Panel value="settings" pt="md">
+            <Paper withBorder p="md" radius="md">
+              <Title order={4} mb="md">Project Settings</Title>
+              <form onSubmit={settingsForm.onSubmit(handleUpdateSettings)}>
+                <Stack>
+                  <TextInput label="Project Name" {...settingsForm.getInputProps('name')} />
+                  <Textarea label="Description" minRows={3} {...settingsForm.getInputProps('description')} />
+                  <Select 
+                    label="Status" 
+                    data={['Planning', 'Preparing', 'In Progress', 'Reviewing', 'Finalizing', 'Completed', 'Delivered', 'Sold', 'Active', 'Archived']} 
+                    {...settingsForm.getInputProps('status')} 
+                  />
+                  <Group justify="flex-end">
+                    <Button type="submit">Save Changes</Button>
+                  </Group>
+                </Stack>
+              </form>
+              <Divider my="xl" />
+              <Title order={4} c="red" mb="md">Danger Zone</Title>
+              <Button color="red" variant="outline" onClick={handleDeleteProject}>Delete Project</Button>
+            </Paper>
+          </Tabs.Panel>
+        )}
       </Tabs>
     </AdminLayout>
   );

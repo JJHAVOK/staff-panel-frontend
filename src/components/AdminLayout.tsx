@@ -16,11 +16,12 @@ import {
   IconDiamond, IconKey, IconHeartbeat, IconSend,
   IconCalendarTime,
   IconChevronDown, IconUserCircle, IconHelp, IconClock,
-  IconReceipt2, IconBox, IconPackage, IconLayoutKanban,
+  IconReceipt2, IconBox, IconPackage, IconBuildingStore, IconLifebuoy,
 } from '@tabler/icons-react';
 import api from '@/lib/api';
 import Link from 'next/link';
 import { GlobalClockWidget } from '@/components/GlobalClockWidget';
+import { NotificationBell } from '@/components/NotificationBell'; // <-- 1. IMPORT NEW COMPONENT
 
 // Search result interface
 interface SearchResult {
@@ -115,17 +116,17 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
         {userPermissions.includes('crm:read') && (
           <NavLink href="/crm/organizations" label="CRM" leftSection={<IconBriefcase size="1rem" stroke={1.5} />} active={pathname.startsWith('/crm')} />
         )}
-        {userPermissions.includes('read:billing') && (
-          <NavLink href="/billing" label="Billing & Invoices" leftSection={<IconReceipt2 size="1rem" stroke={1.5} />} active={pathname === '/billing'} />
-        )}        
         {userPermissions.includes('read:products') && (
           <NavLink href="/ecommerce/products" label="Product Catalog" leftSection={<IconBox size="1rem" stroke={1.5} />} active={pathname === '/ecommerce/products'} />
         )}
         {userPermissions.includes('read:orders') && (
           <NavLink href="/ecommerce/orders" label="Orders & Logistics" leftSection={<IconPackage size="1rem" stroke={1.5} />} active={pathname === '/ecommerce/orders'} />
         )}
-        {userPermissions.includes('read:projects') && (
- 		<NavLink href="/projects" label="Projects" leftSection={<IconLayoutKanban size="1rem" stroke={1.5} />} active={pathname === '/projects'} />
+        {userPermissions.includes('read:billing') && (
+          <NavLink href="/billing" label="Billing & Invoices" leftSection={<IconReceipt2 size="1rem" stroke={1.5} />} active={pathname === '/billing'} />
+        )}
+        {userPermissions.includes('read:helpdesk') && (
+  		  <NavLink href="/helpdesk" label="Support Helpdesk" leftSection={<IconLifebuoy size="1rem" stroke={1.5} />} active={pathname === '/helpdesk'} />
 		)}
         {userPermissions.includes('user:read') && (
           <NavLink href="/users" label="Staff Management" leftSection={<IconUsers size="1rem" stroke={1.5} />} active={pathname === '/users'} />
@@ -139,6 +140,9 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
         {(userPermissions.includes('own:timesheets') || userPermissions.includes('manage:timesheets')) && (
           <NavLink href="/timesheets" label="Timesheets" leftSection={<IconClock size="1rem" stroke={1.5} />} active={pathname === '/timesheets'} />
         )}
+        {userPermissions.includes('read:procurement') && (
+ 		  <NavLink href="/procurement" label="Procurement" leftSection={<IconBuildingStore size="1rem" stroke={1.5} />} active={pathname === '/procurement'} />
+		)}
         {userPermissions.includes('read:monitoring') && (
           <NavLink href="/status" label="System Status" leftSection={<IconHeartbeat size="1rem" stroke={1.5} />} active={pathname === '/status'} />
         )}
@@ -154,7 +158,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
         {userPermissions.includes('read:api-keys') && (
           <NavLink href="/api-keys" label="API Keys" leftSection={<IconKey size="1rem" stroke={1.5} />} active={pathname === '/api-keys'} />
         )}
-
+        
       </AppShell.Navbar>
 
       {/* --- MAIN CONTENT AREA --- */}
@@ -261,12 +265,16 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
             </Popover>
           </Group>
 
-          {/* Right Side: Clock Widget and Profile Menu */}
+          {/* Right Side: Clock Widget, Notifications, Profile */}
           <Group>
              {/* Clock Widget */}
              {isHydrated && userPermissions.includes('own:timesheets') && (
               <GlobalClockWidget />
             )}
+
+            {/* --- 👇 2. ADD NOTIFICATION BELL HERE 👇 --- */}
+            <NotificationBell />
+            {/* --- 👆 END ADD 👆 --- */}
             
             {/* Profile Menu */}
             <Menu shadow="md" width={200}>
