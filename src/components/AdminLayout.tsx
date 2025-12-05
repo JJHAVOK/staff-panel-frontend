@@ -15,7 +15,8 @@ import {
   IconFileText, IconSearch, IconUser, IconBriefcase, IconAddressBook,
   IconDiamond, IconKey, IconHeartbeat, IconSend,
   IconCalendarTime, IconChevronDown, IconUserCircle, IconHelp, IconClock,
-  IconReceipt2, IconBox, IconPackage, IconBuildingStore, IconLifebuoy, IconMailForward
+  IconReceipt2, IconBox, IconPackage, IconBuildingStore, IconLifebuoy, IconMailForward,
+  IconMail // <-- ADDED THIS
 } from '@tabler/icons-react';
 import api from '@/lib/api';
 import Link from 'next/link';
@@ -99,7 +100,6 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
       navbar={{ width: 250, breakpoint: 'sm', collapsed: { mobile: !opened } }}
       padding="md"
     >
-      {/* --- SIDEBAR (Navbar) --- */}
       <AppShell.Navbar p="md">
         <Group px="md" mb="md" justify="space-between">
           {siteName ? (
@@ -110,9 +110,10 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
           <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" />
         </Group>
 
+        {/* DASHBOARD */}
         <NavLink href="/" label="Dashboard" leftSection={<IconHome2 size="1rem" stroke={1.5} />} active={pathname === '/'} />
-        
-        {/* --- HR & STAFF --- */}
+
+        {/* HR & STAFF MANAGEMENT */}
         {(hasPerm('user:read') || hasPerm('rbac:read') || hasPerm('hr:timesheet:own') || hasPerm('hr:leave:own')) && (
           <NavLink label="HR & Staff" leftSection={<IconUsers size="1rem" stroke={1.5} />} defaultOpened>
             {hasPerm('user:read') && <NavLink href="/users" label="Staff Directory" active={pathname === '/users'} />}
@@ -122,7 +123,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
           </NavLink>
         )}
 
-        {/* --- CRM & SALES --- */}
+        {/* CRM & SALES */}
         {(hasPerm('crm:orgs:read') || hasPerm('crm:contacts:read') || hasPerm('crm:deals:read')) && (
            <NavLink label="CRM & Sales" leftSection={<IconBriefcase size="1rem" stroke={1.5} />} defaultOpened>
              {hasPerm('crm:orgs:read') && <NavLink href="/crm/organizations" label="Organizations" active={pathname === '/crm/organizations'} />}
@@ -132,7 +133,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
            </NavLink>
         )}
 
-        {/* --- E-COMMERCE --- */}
+        {/* E-COMMERCE & PROJECTS */}
         {(hasPerm('ecommerce:products:read') || hasPerm('ecommerce:orders:read') || hasPerm('projects:read')) && (
           <NavLink label="E-commerce" leftSection={<IconBox size="1rem" stroke={1.5} />} defaultOpened>
              {hasPerm('ecommerce:products:read') && <NavLink href="/ecommerce/products" label="Product Catalog" active={pathname === '/ecommerce/products'} />}
@@ -141,7 +142,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
           </NavLink>
         )}
 
-        {/* --- FINANCE & SUPPLY --- */}
+        {/* FINANCE & SUPPLY */}
         {(hasPerm('finance:billing:read') || hasPerm('procurement:vendors:read') || hasPerm('procurement:orders:read')) && (
           <NavLink label="Finance & Supply" leftSection={<IconReceipt2 size="1rem" stroke={1.5} />}>
              {hasPerm('finance:billing:read') && <NavLink href="/billing" label="Billing & Invoices" active={pathname === '/billing'} />}
@@ -152,17 +153,22 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
           </NavLink>
         )}
         
-        {/* --- MARKETING --- */}
+        {/* MARKETING */}
         {hasPerm('marketing:campaigns:read') && (
            <NavLink href="/marketing" label="Marketing" leftSection={<IconMailForward size="1rem" stroke={1.5} />} active={pathname === '/marketing'} />
         )}
 
-        {/* --- SUPPORT --- */}
+        {/* SUPPORT */}
         {hasPerm('helpdesk:read') && (
            <NavLink href="/helpdesk" label="Helpdesk" leftSection={<IconLifebuoy size="1rem" stroke={1.5} />} active={pathname === '/helpdesk'} />
         )}
 
-        {/* --- SYSTEM --- */}
+        {/* INBOX */}
+        {userPermissions.includes('read:inbox') && (
+           <NavLink href="/inbox" label="Inbox" leftSection={<IconMail size="1rem" stroke={1.5} />} active={pathname === '/inbox'} />
+        )}
+
+        {/* SYSTEM */}
         <NavLink label="System" leftSection={<IconSettings size="1rem" stroke={1.5} />}>
            {hasPerm('system:audit:read') && <NavLink href="/audit" label="Audit Logs" active={pathname === '/audit'} />}
            {hasPerm('system:settings:read') && <NavLink href="/settings" label="Platform Settings" active={pathname === '/settings'} />}
@@ -339,7 +345,6 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
           </Group>
         </Group>
         
-        {/* --- CONTENT --- */}
         {children}
       </AppShell.Main>
     </AppShell>
