@@ -130,7 +130,8 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
                
                {hasPerm('ecommerce:orders:read') && <NavLink href="/ecommerce/orders" label="Orders" active={pathname === '/ecommerce/orders'} />}
                {hasPerm('projects:read') && <NavLink href="/projects" label="Projects (Kanban)" active={pathname === '/projects'} />}
-            </NavLink>
+ 			   {hasPerm('ecommerce:orders:read') && <NavLink href="/ecommerce/returns" label="Returns / RMA" active={pathname === '/ecommerce/returns'} />}           
+      		</NavLink>
           )}
 
           {/* FINANCE */}
