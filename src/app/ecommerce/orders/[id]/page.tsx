@@ -4,13 +4,13 @@ import { useState, useEffect } from 'react';
 import { AdminLayout } from '@/components/AdminLayout';
 import {
   Title, Text, Button, Group, Table, Badge, Paper, LoadingOverlay, Alert, Stack,
-  Grid, Card, ThemeIcon, Menu, TextInput, NumberInput, Select, Modal
+  Grid, Card, ThemeIcon, Menu, TextInput, NumberInput, Select, Modal, Radio, Divider
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { useDisclosure } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
 import { 
-  IconTruck, IconTrash, IconArrowLeft, IconDots, IconUser, IconAlertCircle, IconPencil 
+  IconTruck, IconTrash, IconArrowLeft, IconDots, IconUser, IconAlertCircle, IconPencil, IconPrinter 
 } from '@tabler/icons-react';
 import api from '@/lib/api';
 import { useParams, useRouter } from 'next/navigation';
@@ -24,7 +24,7 @@ export default function OrderDetailsPage() {
   
   const { user } = useAuthStore();
   const userPermissions = user?.permissions || [];
-  const canManage = userPermissions.includes('manage:orders');
+  const canManage = userPermissions.includes('ecommerce:orders:update');
 
   const [order, setOrder] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -33,6 +33,11 @@ export default function OrderDetailsPage() {
   // Modals
   const [editModalOpened, { open: openEdit, close: closeEdit }] = useDisclosure(false);
   const [shipmentModalOpened, { open: openShipment, close: closeShipment }] = useDisclosure(false);
+  
+  // Shipping State (Simulated Rates)
+  const [shipRates, setShipRates] = useState<any[]>([]);
+  const [selectedRate, setSelectedRate] = useState<string>('');
+  const [buyingLabel, setBuyingLabel] = useState(false);
 
   // Forms
   const editOrderForm = useForm({
@@ -97,19 +102,39 @@ export default function OrderDetailsPage() {
     }
   };
 
-  const handleShipment = async (values: typeof shipmentForm.values) => {
-    try {
-      await api.post(`/ecommerce/orders/${id}/shipments`, values);
-      notifications.show({ title: 'Shipped', message: 'Shipment added.', color: 'green' });
-      closeShipment();
-      shipmentForm.reset();
-      fetchOrder();
-    } catch (e) {
-      notifications.show({ title: 'Error', message: 'Failed to add shipment.', color: 'red' });
-    }
+  // --- NEW: SHIPPING LOGIC ---
+  const handleOpenShip = async () => {
+      openShipment(); // Open modal immediately
+      try {
+          // Fetch rates from our backend simulation
+          const res = await api.get(`/ecommerce/shipping/rates/${id}`);
+          setShipRates(res.data);
+      } catch(e) { 
+          notifications.show({ title: 'Error', message: 'Failed to fetch rates', color: 'red' }); 
+      }
   };
 
-  // Openers
+  const handleBuyLabel = async () => {
+      if(!selectedRate) return;
+      setBuyingLabel(true);
+      const rate = shipRates.find(r => r.id === selectedRate);
+      try {
+          await api.post('/ecommerce/shipping/buy', { 
+              orderId: id, 
+              rateId: rate.id, 
+              carrier: rate.carrier 
+          });
+          notifications.show({ title: 'Success', message: 'Label Purchased!', color: 'green' });
+          closeShipment();
+          fetchOrder();
+      } catch(e) { 
+          notifications.show({ title: 'Error', message: 'Purchase failed', color: 'red' }); 
+      } finally { 
+          setBuyingLabel(false); 
+      }
+  };
+  // --- END SHIPPING LOGIC ---
+
   const openEditModal = () => {
     if (order) {
       editOrderForm.setValues({
@@ -146,16 +171,31 @@ export default function OrderDetailsPage() {
         </form>
       </Modal>
 
-      {/* --- Shipment Modal --- */}
-      <Modal opened={shipmentModalOpened} onClose={closeShipment} title="Add Shipment Info">
-        <form onSubmit={shipmentForm.onSubmit(handleShipment)}>
-          <Stack>
-             <TextInput label="Carrier" placeholder="e.g. UPS, FedEx" required {...shipmentForm.getInputProps('carrier')} />
-             <TextInput label="Tracking Number" placeholder="1Z999..." required {...shipmentForm.getInputProps('trackingNumber')} />
-             <TextInput label="Tracking URL (Optional)" placeholder="https://..." {...shipmentForm.getInputProps('trackingUrl')} />
-             <Button type="submit">Mark Shipped</Button>
-          </Stack>
-        </form>
+      {/* --- Shipment Modal (Enhanced) --- */}
+      <Modal opened={shipmentModalOpened} onClose={closeShipment} title="Purchase Shipping Label">
+         <Stack>
+             <Text size="sm">Select a rate for this package:</Text>
+             {shipRates.length === 0 ? <Text c="dimmed">Fetching rates...</Text> : (
+                 <Radio.Group value={selectedRate} onChange={setSelectedRate}>
+                     <Stack gap="xs">
+                         {shipRates.map(rate => (
+                             <Paper key={rate.id} withBorder p="sm" radius="sm">
+                                 <Radio 
+                                    value={rate.id} 
+                                    label={
+                                        <Group justify="space-between" w="100%">
+                                            <Text size="sm">{rate.carrier} {rate.service}</Text>
+                                            <Text fw={700}>${rate.price.toFixed(2)}</Text>
+                                        </Group>
+                                    } 
+                                 />
+                             </Paper>
+                         ))}
+                     </Stack>
+                 </Radio.Group>
+             )}
+             <Button onClick={handleBuyLabel} loading={buyingLabel} disabled={!selectedRate} mt="md">Buy Label</Button>
+         </Stack>
       </Modal>
 
       <Group mb="lg">
@@ -168,7 +208,7 @@ export default function OrderDetailsPage() {
         <div>
           <Group>
             <Title order={2}>Order {order.orderNumber}</Title>
-            <Badge size="lg" color={order.status === 'PAID' ? 'green' : 'gray'}>{order.status}</Badge>
+            <Badge size="lg" color={order.status === 'PAID' ? 'green' : order.status === 'SHIPPED' ? 'blue' : 'gray'}>{order.status}</Badge>
           </Group>
           <Text c="dimmed">{new Date(order.createdAt).toLocaleString()}</Text>
         </div>
@@ -180,14 +220,12 @@ export default function OrderDetailsPage() {
             </Menu.Target>
             <Menu.Dropdown>
               <Menu.Label>Manage</Menu.Label>
-              {/* --- NEW ACTIONS --- */}
               <Menu.Item leftSection={<IconPencil size={14} />} onClick={openEditModal}>
                 Edit Details
               </Menu.Item>
-              <Menu.Item leftSection={<IconTruck size={14} />} onClick={openShipment}>
-                Update Shipping
+              <Menu.Item leftSection={<IconTruck size={14} />} onClick={handleOpenShip}>
+                Ship Order
               </Menu.Item>
-              {/* --- END NEW ACTIONS --- */}
               
               <Menu.Divider />
               <Menu.Label>Status</Menu.Label>
@@ -235,9 +273,10 @@ export default function OrderDetailsPage() {
             </Group>
           </Paper>
 
+          {/* SHIPMENTS SECTION */}
           <Paper withBorder p="md" radius="md">
             <Title order={4} mb="md">Shipments</Title>
-            {order.shipments.length === 0 ? (
+            {(!order.shipments || order.shipments.length === 0) ? (
               <Text c="dimmed">No shipments created.</Text>
             ) : (
               <Stack>
@@ -246,10 +285,15 @@ export default function OrderDetailsPage() {
                     <Group justify="space-between">
                       <Group>
                         <ThemeIcon color="blue" variant="light"><IconTruck size={16} /></ThemeIcon>
-                        <Text fw={500}>{ship.carrier}</Text>
-                        <Text>{ship.trackingNumber}</Text>
+                        <div>
+                            <Text fw={500}>{ship.carrier}</Text>
+                            <Text size="xs">{ship.trackingNumber}</Text>
+                        </div>
                       </Group>
-                      <Badge>{ship.status}</Badge>
+                      <Group>
+                          <Badge>{ship.status}</Badge>
+                          <Button variant="subtle" size="xs" leftSection={<IconPrinter size={14}/>} onClick={() => window.open(ship.trackingUrl, '_blank')}>Label</Button>
+                      </Group>
                     </Group>
                   </Card>
                 ))}
