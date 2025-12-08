@@ -16,7 +16,7 @@ import {
   IconDiamond, IconKey, IconHeartbeat, IconSend,
   IconCalendarTime, IconChevronDown, IconUserCircle, IconHelp, IconClock,
   IconReceipt2, IconBox, IconPackage, IconBuildingStore, IconLifebuoy, IconMailForward,
-  IconMail, IconShieldLock, IconTicket, IconHistory
+  IconMail, IconShieldLock, IconTicket, IconHistory, IconScan
 } from '@tabler/icons-react';
 import api from '@/lib/api';
 import Link from 'next/link';
@@ -130,7 +130,8 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
                
                {hasPerm('ecommerce:orders:read') && <NavLink href="/ecommerce/orders" label="Orders" active={pathname === '/ecommerce/orders'} />}
                {hasPerm('projects:read') && <NavLink href="/projects" label="Projects (Kanban)" active={pathname === '/projects'} />}
- 			   {hasPerm('ecommerce:orders:read') && <NavLink href="/ecommerce/returns" label="Returns / RMA" active={pathname === '/ecommerce/returns'} />}           
+ 			   {hasPerm('ecommerce:products:read') && <NavLink href="/ecommerce/inventory" label="Scanner Tool" leftSection={<IconScan size="1rem" />} active={pathname === '/ecommerce/inventory'} />}
+      		   {hasPerm('ecommerce:orders:read') && <NavLink href="/ecommerce/returns" label="Returns / RMA" active={pathname === '/ecommerce/returns'} />}           
       		</NavLink>
           )}
 
