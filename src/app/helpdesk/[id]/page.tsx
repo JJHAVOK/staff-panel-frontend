@@ -4,28 +4,30 @@ import { useState, useEffect } from 'react';
 import { AdminLayout } from '@/components/AdminLayout';
 import {
   Title, Text, Button, Group, Paper, LoadingOverlay, Alert, Stack,
-  Badge, ActionIcon, Textarea, Avatar, Select, Divider, Box,
-  Modal, SimpleGrid, ThemeIcon, rem, Menu, Grid, Checkbox
+  Badge, ActionIcon, Textarea, Avatar, Divider,
+  SimpleGrid, ThemeIcon, rem, Menu, Grid, Checkbox
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { notifications } from '@mantine/notifications';
 import { 
-  IconArrowLeft, IconSend, IconPaperclip, IconUpload, IconX, IconFile, 
-  IconCheck, IconUser, IconTag, IconAlertCircle, IconPackage, IconDots, 
-  IconUserCircle, IconTrash, IconPencil, IconMail, IconPlus, IconFlame, IconLock, IconBan
+  IconArrowLeft, IconSend, IconPaperclip, IconX, IconFile, 
+  IconCheck, IconUser, IconTag, IconPackage, IconDots, 
+  IconUserCircle, IconTrash, IconMail, IconFlame, IconLock, IconBan
 } from '@tabler/icons-react';
 import api from '@/lib/api';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuthStore } from '@/lib/authStore';
 import { Dropzone, MIME_TYPES } from '@mantine/dropzone';
 
 export default function TicketDetailPage() {
   const { id } = useParams();
+  const router = useRouter();
   const { user } = useAuthStore();
   const userPermissions = user?.permissions || [];
+  
   const canManage = userPermissions.includes('manage:helpdesk');
-  const isManager = canManage; 
+  const userId = user?.userId;
 
   const [ticket, setTicket] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -44,8 +46,11 @@ export default function TicketDetailPage() {
 
   useEffect(() => { if(id) fetchTicket(); }, [id]);
 
-  const isAssignedToOthers = ticket?.assignedToId && ticket?.assignedToId !== user?.userId;
-  const canReply = isManager || !isAssignedToOthers; 
+  const isAssignedToMe = ticket?.assignedTo?.id === userId;
+  const isUnassigned = !ticket?.assignedTo;
+  
+  // Reply Logic: Managers can always reply. Agents can reply if unassigned OR assigned to them.
+  const canReply = canManage || isAssignedToMe || isUnassigned; 
 
   const handleSendMessage = async (values: typeof messageForm.values) => {
     setUploading(true);
@@ -61,7 +66,7 @@ export default function TicketDetailPage() {
           const formData = new FormData();
           formData.append('file', file);
           await api.post(`/documents/upload/ticket-message/${messageId}`, formData, {
-            headers: { 'Content-Type': 'multipart/form-formdata' },
+            headers: { 'Content-Type': 'multipart/form-data' },
           });
         }
       }
@@ -71,7 +76,7 @@ export default function TicketDetailPage() {
       setFiles([]);
       fetchTicket();
     } catch (e) {
-      notifications.show({ title: 'Error', message: 'Failed to send. Check assignment.', color: 'red' });
+      notifications.show({ title: 'Error', message: 'Failed to send.', color: 'red' });
     } finally {
       setUploading(false);
     }
@@ -93,10 +98,14 @@ export default function TicketDetailPage() {
      } catch(e) {}
   };
   
-  const handleDelete = async () => {
-    if(!confirm('Delete ticket?')) return;
-    // Assuming delete endpoint exists or handled via status
-    try { await api.patch(`/helpdesk/${id}`, { status: 'CLOSED' }); notifications.show({ title: 'Closed', message: 'Ticket closed (soft delete).', color: 'green' }); } catch(e) {}
+  // --- NEW: Full Delete Logic ---
+  const handleDelete = async (type: 'SOFT' | 'HARD') => {
+    if(!confirm(`Are you sure you want to ${type === 'HARD' ? 'permanently' : 'archive'} delete this ticket?`)) return;
+    try { 
+        await api.delete(`/helpdesk/${id}?type=${type}`); 
+        notifications.show({ title: 'Closed', message: `Ticket ${type === 'HARD' ? 'deleted' : 'archived'}.`, color: 'green' }); 
+        router.push('/helpdesk'); // Redirect to list
+    } catch(e) {}
   };
 
   if (loading) return <AdminLayout><LoadingOverlay visible /></AdminLayout>;
@@ -115,37 +124,37 @@ export default function TicketDetailPage() {
               {ticket.isEscalated && <Badge color="red" leftSection={<IconFlame size={12} />}>ESCALATED</Badge>}
            </Group>
            
-           {canManage && (
-             <Menu shadow="md" width={200}>
-               <Menu.Target>
-                 <Button variant="default" leftSection={<IconDots size={16} />}>Actions</Button>
-               </Menu.Target>
-               <Menu.Dropdown>
-                 <Menu.Label>Status</Menu.Label>
-                 <Menu.Item onClick={() => handleStatusChange('IN_PROGRESS')}>Mark In Progress</Menu.Item>
-                 <Menu.Item onClick={() => handleStatusChange('RESOLVED')} leftSection={<IconCheck size={14} />}>Mark Resolved</Menu.Item>
-                 
-                 {/* --- 👇 ADDED MISSING CLOSE OPTION 👇 --- */}
-                 <Menu.Item onClick={() => handleStatusChange('CLOSED')} leftSection={<IconBan size={14} />}>Mark Closed</Menu.Item>
-                 {/* --- 👆 END ADD 👆 --- */}
-                 
-                 <Menu.Divider />
-                 <Menu.Label>Management</Menu.Label>
-                 <Menu.Item onClick={handleEscalate} leftSection={<IconFlame size={14} />}>
-                    {ticket.isEscalated ? 'De-Escalate' : 'Escalate Ticket'}
-                 </Menu.Item>
-                 <Menu.Item 
-                   onClick={() => handleAssignmentChange(user?.userId ?? null)} 
-                   leftSection={<IconUserCircle size={14} />}
-                 >
-                   Assign to Me
-                 </Menu.Item>
-                 <Menu.Item onClick={() => handleAssignmentChange(null)}>Unassign</Menu.Item>
-                 <Menu.Divider />
-                 <Menu.Item color="red" leftSection={<IconTrash size={14} />} onClick={handleDelete}>Delete Ticket</Menu.Item>
-               </Menu.Dropdown>
-             </Menu>
-           )}
+           <Menu shadow="md" width={200}>
+             <Menu.Target>
+               <Button variant="default" leftSection={<IconDots size={16} />}>Actions</Button>
+             </Menu.Target>
+             <Menu.Dropdown>
+               <Menu.Label>Status</Menu.Label>
+               <Menu.Item onClick={() => handleStatusChange('IN_PROGRESS')}>Mark In Progress</Menu.Item>
+               <Menu.Item onClick={() => handleStatusChange('RESOLVED')} leftSection={<IconCheck size={14} />}>Mark Resolved</Menu.Item>
+               <Menu.Item onClick={() => handleStatusChange('CLOSED')} leftSection={<IconBan size={14} />}>Mark Closed</Menu.Item>
+               
+               <Menu.Divider />
+               <Menu.Label>Management</Menu.Label>
+               <Menu.Item onClick={handleEscalate} leftSection={<IconFlame size={14} />}>
+                 {ticket.isEscalated ? 'De-Escalate' : 'Escalate Ticket'}
+               </Menu.Item>
+               
+               {/* ASSIGNMENT LOGIC */}
+               {(!isAssignedToMe && (canManage || isUnassigned)) && (
+                   // FIX: Ensure userId is valid string or null
+                   <Menu.Item leftSection={<IconUserCircle size={14}/>} onClick={() => handleAssignmentChange(userId || null)}>Assign to Me</Menu.Item>
+               )}
+               {(isAssignedToMe || canManage) && !isUnassigned && (
+                   <Menu.Item color="orange" onClick={() => handleAssignmentChange(null)}>Unassign</Menu.Item>
+               )}
+
+               <Menu.Divider />
+               <Menu.Label>Danger Zone</Menu.Label>
+               <Menu.Item color="orange" leftSection={<IconTrash size={14} />} onClick={() => handleDelete('SOFT')}>Archive (Soft)</Menu.Item>
+               {canManage && <Menu.Item color="red" leftSection={<IconTrash size={14} />} onClick={() => handleDelete('HARD')}>Delete Permanently</Menu.Item>}
+             </Menu.Dropdown>
+           </Menu>
         </Group>
         
         <Group gap="xs">
@@ -155,21 +164,14 @@ export default function TicketDetailPage() {
            <Text c="dimmed" size="sm">•</Text>
            <Text c="dimmed" size="sm">Status: <Badge color={ticket.status === 'OPEN' ? 'blue' : 'gray'}>{ticket.status}</Badge></Text>
            
-           {/* --- 👇 IMPROVED AGENT VISIBILITY 👇 --- */}
            {ticket.assignedTo && (
               <>
                  <Text c="dimmed" size="sm">•</Text>
-                 <Badge 
-                    size="md" 
-                    variant="filled" 
-                    color="cyan" 
-                    leftSection={<IconUserCircle size={14} />}
-                 >
+                 <Badge size="md" variant="filled" color="cyan" leftSection={<IconUserCircle size={14} />}>
                     Agent: {ticket.assignedTo.firstName}
                  </Badge>
               </>
            )}
-           {/* --- 👆 END IMPROVEMENT 👆 --- */}
         </Group>
       </Paper>
 
@@ -193,7 +195,7 @@ export default function TicketDetailPage() {
                   >
                     {isInternal && <Text size="xs" c="orange" fw={700} mb={4}><IconLock size={10}/> INTERNAL NOTE</Text>}
                     
-                    <Text size="sm">{msg.content}</Text>
+                    <Text size="sm" style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</Text>
                     
                     {msg.documents && msg.documents.length > 0 && (
                         <SimpleGrid cols={3} spacing="xs" mt="sm">
@@ -237,7 +239,7 @@ export default function TicketDetailPage() {
                     )}
                     <Group align="flex-start" gap="xs">
                       <Stack gap={4} style={{ flex: 1 }}>
-                         <Textarea 
+                          <Textarea 
                               placeholder="Type your reply..." 
                               minRows={3} 
                               {...messageForm.getInputProps('content')}

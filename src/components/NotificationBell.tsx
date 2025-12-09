@@ -1,81 +1,147 @@
 'use client';
+
 import { useState, useEffect } from 'react';
-import { ActionIcon, Indicator, Menu, Text, ScrollArea, Group, Button, ThemeIcon } from '@mantine/core';
-import { IconBell, IconInfoCircle } from '@tabler/icons-react';
+import { Popover, Indicator, ActionIcon, ScrollArea, Stack, Text, Group, Button, Box, ThemeIcon } from '@mantine/core';
+import { IconBell, IconCheck, IconInfoCircle, IconAlertTriangle, IconCircleCheck } from '@tabler/icons-react';
 import api from '@/lib/api';
-import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { useAuthStore } from '@/lib/authStore';
+import { io } from 'socket.io-client'; // <-- Import
 
 export function NotificationBell() {
+  const router = useRouter();
+  const { token } = useAuthStore();
   const [notifications, setNotifications] = useState<any[]>([]);
-  const unreadCount = notifications.filter(n => !n.readAt).length;
+  const [opened, setOpened] = useState(false);
 
-  const fetchNotifications = async () => {
-    try {
-      const res = await api.get('/notifications');
-      setNotifications(res.data);
-    } catch (e) {}
+  const fetchNotifs = () => {
+    api.get('/notifications').then(res => setNotifications(res.data)).catch(() => {});
   };
 
   useEffect(() => {
-    fetchNotifications();
-    const interval = setInterval(fetchNotifications, 60000); // Poll every minute
-    return () => clearInterval(interval);
-  }, []);
+    // 1. Initial Fetch
+    fetchNotifs();
+    
+    if (!token) return;
 
-  const markRead = async (id: string) => {
-    await api.patch(`/notifications/${id}/read`);
-    setNotifications(prev => prev.map(n => n.id === id ? { ...n, readAt: new Date() } : n));
+    // 2. Connect WebSocket
+    const socket = io('https://api.pixelforgedeveloper.com', {
+        auth: { token: `Bearer ${token}` }
+    });
+
+    // 3. Listen for events
+    socket.on('notification', (newNotif) => {
+        // Add to top of list
+        setNotifications(prev => [newNotif, ...prev]);
+    });
+
+    return () => {
+        socket.disconnect();
+    };
+  }, [token]);
+
+  const unreadCount = notifications.filter(n => !n.readAt).length;
+
+  const handleMarkRead = async (id: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    try {
+        await api.patch(`/notifications/${id}/read`);
+        setNotifications(prev => prev.map(n => n.id === id ? { ...n, readAt: new Date() } : n));
+    } catch(e) {}
   };
 
-  const markAllRead = async () => {
-    await api.post('/notifications/read-all');
-    setNotifications(prev => prev.map(n => ({ ...n, readAt: new Date() })));
+  const handleMarkAllRead = async () => {
+      const unread = notifications.filter(n => !n.readAt);
+      for(const n of unread) {
+          await api.patch(`/notifications/${n.id}/read`);
+      }
+      fetchNotifs();
+  };
+
+  const handleClick = (n: any) => {
+      if (!n.readAt) handleMarkRead(n.id);
+      if (n.link) {
+          router.push(n.link);
+          setOpened(false);
+      }
+  };
+
+  const getIcon = (type: string) => {
+      switch(type) {
+          case 'SUCCESS': return <IconCircleCheck size={16} />;
+          case 'WARNING': return <IconAlertTriangle size={16} />;
+          default: return <IconInfoCircle size={16} />;
+      }
+  };
+  
+  const getColor = (type: string) => {
+      switch(type) {
+          case 'SUCCESS': return 'green';
+          case 'WARNING': return 'yellow';
+          case 'ERROR': return 'red';
+          default: return 'blue';
+      }
   };
 
   return (
-    <Menu shadow="md" width={350} position="bottom-end">
-      <Menu.Target>
-        <Indicator label={unreadCount} size={16} disabled={unreadCount === 0} color="red" offset={4}>
-          <ActionIcon variant="subtle" size="lg" radius="xl">
+    <Popover opened={opened} onChange={setOpened} width={350} position="bottom-end" shadow="md">
+      <Popover.Target>
+        <Indicator disabled={unreadCount === 0} color="red" size={16} offset={4} label={unreadCount > 0 ? unreadCount : null}>
+          <ActionIcon variant="subtle" color="gray" size="lg" onClick={() => setOpened((o) => !o)}>
             <IconBell size={20} />
           </ActionIcon>
         </Indicator>
-      </Menu.Target>
-      <Menu.Dropdown>
-        <Group justify="space-between" p="xs" pb={0}>
-          <Text size="sm" fw={700}>Notifications</Text>
-          {unreadCount > 0 && (
-             <Button size="xs" variant="subtle" onClick={markAllRead}>Mark all read</Button>
-          )}
-        </Group>
-        <ScrollArea.Autosize mah={300} type="scroll">
-          {notifications.length === 0 ? (
-             <Text c="dimmed" size="sm" ta="center" py="md">No notifications</Text>
-          ) : (
-             notifications.map(n => (
-               <Menu.Item 
-                 key={n.id} 
-                 onClick={() => !n.readAt && markRead(n.id)}
-                 style={{ opacity: n.readAt ? 0.6 : 1 }}
-                 // --- 👇 FIX: Added 'as any' to silence TS error ---
-                 component={(n.link ? Link : 'button') as any}
-                 href={n.link || '#'}
-               >
-                 <Group wrap="nowrap" align="flex-start">
-                   <ThemeIcon size="sm" variant="light" color={n.readAt ? 'gray' : 'blue'} mt={2}>
-                     <IconInfoCircle size={12} />
-                   </ThemeIcon>
-                   <div>
-                     <Text size="sm" fw={n.readAt ? 400 : 600}>{n.title}</Text>
-                     <Text size="xs" c="dimmed" lineClamp={2}>{n.message}</Text>
-                     <Text size="xs" c="dimmed" mt={4}>{new Date(n.createdAt).toLocaleString()}</Text>
-                   </div>
-                 </Group>
-               </Menu.Item>
-             ))
-          )}
-        </ScrollArea.Autosize>
-      </Menu.Dropdown>
-    </Menu>
+      </Popover.Target>
+
+      <Popover.Dropdown p={0}>
+        <Box p="sm" bg="gray.1" style={{ borderBottom: '1px solid var(--mantine-color-gray-3)' }}>
+            <Group justify="space-between">
+                <Text size="sm" fw={700}>Notifications</Text>
+                {unreadCount > 0 && (
+                    <Button variant="subtle" size="xs" onClick={handleMarkAllRead}>Mark all read</Button>
+                )}
+            </Group>
+        </Box>
+
+        <ScrollArea h={350}>
+            {notifications.length === 0 ? (
+                <Text c="dimmed" size="sm" ta="center" py="xl">No notifications</Text>
+            ) : (
+                <Stack gap={0}>
+                    {notifications.map((n) => (
+                        <Box 
+                            key={n.id} 
+                            p="sm" 
+                            style={{ 
+                                cursor: 'pointer', 
+                                borderBottom: '1px solid var(--mantine-color-gray-2)',
+                                backgroundColor: n.readAt ? 'transparent' : 'var(--mantine-color-blue-0)' 
+                            }}
+                            onClick={() => handleClick(n)}
+                        >
+                            <Group align="start" wrap="nowrap">
+                                <ThemeIcon variant="light" size="md" radius="xl" color={getColor(n.type)}>
+                                    {getIcon(n.type)}
+                                </ThemeIcon>
+                                <div style={{ flex: 1 }}>
+                                    <Text size="sm" fw={n.readAt ? 500 : 700} lh={1.2} mb={4}>{n.title}</Text>
+                                    <Text size="xs" c="dimmed" lh={1.4}>{n.message}</Text>
+                                    <Group justify="space-between" mt={4}>
+                                        <Text size="10px" c="dimmed">{new Date(n.createdAt).toLocaleString()}</Text>
+                                        {!n.readAt && (
+                                            <ActionIcon size="xs" variant="transparent" onClick={(e) => handleMarkRead(n.id, e)}>
+                                                <IconCheck size={12} />
+                                            </ActionIcon>
+                                        )}
+                                    </Group>
+                                </div>
+                            </Group>
+                        </Box>
+                    ))}
+                </Stack>
+            )}
+        </ScrollArea>
+      </Popover.Dropdown>
+    </Popover>
   );
 }

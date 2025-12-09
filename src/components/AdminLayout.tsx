@@ -16,7 +16,7 @@ import {
   IconDiamond, IconKey, IconHeartbeat, IconSend,
   IconCalendarTime, IconChevronDown, IconUserCircle, IconHelp, IconClock,
   IconReceipt2, IconBox, IconPackage, IconBuildingStore, IconLifebuoy, IconMailForward,
-  IconMail, IconShieldLock, IconTicket, IconHistory, IconScan
+  IconMail, IconShieldLock, IconTicket, IconHistory, IconScan, IconRobot // <-- ADDED IconRobot
 } from '@tabler/icons-react';
 import api from '@/lib/api';
 import Link from 'next/link';
@@ -74,7 +74,8 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
     return () => clearTimeout(delayDebounceFn);
   }, [searchTerm, fetchSearch]);
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try { await api.post('/auth/logout'); } catch(e) {}
     clearAuth();
     router.replace('/login');
   };
@@ -125,14 +126,12 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
           {(hasPerm('ecommerce:products:read') || hasPerm('ecommerce:orders:read') || hasPerm('projects:read')) && (
             <NavLink label="E-commerce" leftSection={<IconBox size="1rem" stroke={1.5} />}>
                {hasPerm('ecommerce:products:read') && <NavLink href="/ecommerce/products" label="Product Catalog" active={pathname === '/ecommerce/products'} />}
-               {/* --- COUPONS LINK --- */}
-               {hasPerm('ecommerce:products:read') && <NavLink href="/ecommerce/promotions" label="Coupons / Promo" leftSection={<IconTicket size="1rem" />} active={pathname === '/ecommerce/promotions'} />}
-               
+               {hasPerm('ecommerce:promotions:read') && <NavLink href="/ecommerce/promotions" label="Coupons / Promo" leftSection={<IconTicket size="1rem" />} active={pathname === '/ecommerce/promotions'} />}
+               {hasPerm('ecommerce:products:read') && <NavLink href="/ecommerce/inventory" label="Scanner Tool" leftSection={<IconScan size="1rem" />} active={pathname === '/ecommerce/inventory'} />}
                {hasPerm('ecommerce:orders:read') && <NavLink href="/ecommerce/orders" label="Orders" active={pathname === '/ecommerce/orders'} />}
+               {hasPerm('ecommerce:orders:read') && <NavLink href="/ecommerce/returns" label="Returns / RMA" active={pathname === '/ecommerce/returns'} />}
                {hasPerm('projects:read') && <NavLink href="/projects" label="Projects (Kanban)" active={pathname === '/projects'} />}
- 			   {hasPerm('ecommerce:products:read') && <NavLink href="/ecommerce/inventory" label="Scanner Tool" leftSection={<IconScan size="1rem" />} active={pathname === '/ecommerce/inventory'} />}
-      		   {hasPerm('ecommerce:orders:read') && <NavLink href="/ecommerce/returns" label="Returns / RMA" active={pathname === '/ecommerce/returns'} />}           
-      		</NavLink>
+            </NavLink>
           )}
 
           {/* FINANCE */}
@@ -159,7 +158,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
              <NavLink href="/inbox" label="Inbox" leftSection={<IconMail size="1rem" stroke={1.5} />} active={pathname === '/inbox'} />
           )}
 
-          {/* --- SECURITY & LOGS GROUP --- */}
+          {/* SECURITY & LOGS */}
           <NavLink label="Security & Logs" leftSection={<IconShieldLock size="1rem" stroke={1.5} />}>
              {hasPerm('security:read') && <NavLink href="/security" label="Global Security" leftSection={<IconLock size="1rem" stroke={1.5} />} active={pathname === '/security'} />}
              {hasPerm('system:audit:read') && <NavLink href="/audit" label="Audit Logs" leftSection={<IconHistory size="1rem" stroke={1.5} />} active={pathname === '/audit'} />}
@@ -167,6 +166,9 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 
           {/* SYSTEM */}
           <NavLink label="System" leftSection={<IconSettings size="1rem" stroke={1.5} />}>
+             {/* --- 👇 FIXED: IconRobot is now imported --- */}
+             {hasPerm('system:settings:manage') && <NavLink href="/system/automation" label="Automation" leftSection={<IconRobot size="1rem" stroke={1.5} />} active={pathname.startsWith('/system/automation')} />}
+             
              {hasPerm('system:settings:read') && <NavLink href="/settings" label="Platform Settings" active={pathname === '/settings'} />}
              {hasPerm('system:monitoring:read') && <NavLink href="/status" label="System Health" active={pathname === '/status'} />}
              {hasPerm('system:webhooks:read') && <NavLink href="/webhooks" label="Webhooks" active={pathname === '/webhooks'} />}
@@ -177,7 +179,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 
       <AppShell.Main>
         <Group justify="space-between" align="center" h={60} px="md" mb="md" style={{ backgroundColor: 'var(--mantine-color-body)', borderRadius: 'var(--mantine-radius-md)', border: '1px solid var(--mantine-color-dark-4)' }}>
-          {/* Search (Same as before) */}
+          {/* Search */}
           <Group>
             <Popover width={rem(400)} opened={popoverOpened && searchTerm.length > 1} onChange={setPopoverOpened} position="bottom-start" shadow="md" withArrow>
               <Popover.Target>
@@ -192,7 +194,6 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
                 />
               </Popover.Target>
               <Popover.Dropdown p={rem(5)}>
-                  {/* Results mapping logic */}
                   <Stack gap={rem(2)}>
                   {searchLoading && <Text c="dimmed" p="sm">Searching...</Text>}
                   {!searchLoading && searchResults.length === 0 && searchTerm.length > 1 && <Text c="dimmed" p="sm">No results.</Text>}
