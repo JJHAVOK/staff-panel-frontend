@@ -16,7 +16,7 @@ import {
   IconDiamond, IconKey, IconHeartbeat, IconSend,
   IconCalendarTime, IconChevronDown, IconUserCircle, IconHelp, IconClock,
   IconReceipt2, IconBox, IconPackage, IconBuildingStore, IconLifebuoy, IconMailForward,
-  IconMail, IconShieldLock, IconTicket, IconHistory, IconScan, IconRobot // <-- ADDED IconRobot
+  IconMail, IconShieldLock, IconTicket, IconHistory, IconScan, IconRobot, IconWebhook
 } from '@tabler/icons-react';
 import api from '@/lib/api';
 import Link from 'next/link';
@@ -98,7 +98,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
           </Group>
         </AppShell.Section>
 
-        {/* --- SCROLLABLE AREA --- */}
+        {/* --- SCROLLABLE SIDEBAR --- */}
         <AppShell.Section grow component={ScrollArea}>
           
           <NavLink href="/" label="Dashboard" leftSection={<IconHome2 size="1rem" stroke={1.5} />} active={pathname === '/'} />
@@ -166,12 +166,17 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 
           {/* SYSTEM */}
           <NavLink label="System" leftSection={<IconSettings size="1rem" stroke={1.5} />}>
-             {/* --- 👇 FIXED: IconRobot is now imported --- */}
              {hasPerm('system:settings:manage') && <NavLink href="/system/automation" label="Automation" leftSection={<IconRobot size="1rem" stroke={1.5} />} active={pathname.startsWith('/system/automation')} />}
              
+             {/* --- 👇 FIXED: Updated to /system/webhooks --- */}
+             {hasPerm('system:webhooks:read') && <NavLink href="/system/webhooks" label="Webhooks" leftSection={<IconWebhook size="1rem" stroke={1.5} />} active={pathname === '/system/webhooks'} />}
+             
+             {/* --- 👇 NEW: Added Scheduler/Cron --- */}
+             {hasPerm('system:settings:manage') && <NavLink href="/system/cron" label="Cron Jobs" leftSection={<IconClock size="1rem" stroke={1.5} />} active={pathname === '/system/cron'} />}
+             {/* --- 👆 END NEW --- */}
+
              {hasPerm('system:settings:read') && <NavLink href="/settings" label="Platform Settings" active={pathname === '/settings'} />}
              {hasPerm('system:monitoring:read') && <NavLink href="/status" label="System Health" active={pathname === '/status'} />}
-             {hasPerm('system:webhooks:read') && <NavLink href="/webhooks" label="Webhooks" active={pathname === '/webhooks'} />}
              {hasPerm('system:api:read') && <NavLink href="/api-keys" label="API Keys" active={pathname === '/api-keys'} />}
           </NavLink>
         </AppShell.Section>
@@ -194,16 +199,19 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
                 />
               </Popover.Target>
               <Popover.Dropdown p={rem(5)}>
-                  <Stack gap={rem(2)}>
+                <Stack gap={rem(2)}>
                   {searchLoading && <Text c="dimmed" p="sm">Searching...</Text>}
-                  {!searchLoading && searchResults.length === 0 && searchTerm.length > 1 && <Text c="dimmed" p="sm">No results.</Text>}
-                  {!searchLoading && searchResults.map((result) => (
-                      <Anchor component={Link} href={`/${result.type === 'user' ? 'users' : result.type === 'organization' ? 'crm/organizations' : 'crm/contacts'}/${result.id}`} key={result.id} onClick={() => setIsSearchFocused(false)}>
-                        <Group p="xs" style={{ cursor: 'pointer' }} styles={{ root: { '&:hover': { backgroundColor: 'var(--mantine-color-dark-6)' } } }} >
-                          <Text size="sm">{result.name || `${result.firstName} ${result.lastName}`}</Text>
-                        </Group>
-                      </Anchor>
-                  ))}
+                  {!searchLoading && searchResults.length === 0 && searchTerm.length > 1 && (
+                    <Text c="dimmed" p="sm">No results found for "{searchTerm}".</Text>
+                  )}
+                  {!searchLoading && searchResults.length > 0 &&
+                    searchResults.map((result) => (
+                        <Anchor component={Link} href={`/${result.type === 'user' ? 'users' : result.type === 'organization' ? 'crm/organizations' : 'crm/contacts'}/${result.id}`} key={result.id} onClick={() => setIsSearchFocused(false)}>
+                          <Group p="xs" style={{ cursor: 'pointer' }} styles={{ root: { '&:hover': { backgroundColor: 'var(--mantine-color-dark-6)' } } }} >
+                            <Text size="sm">{result.name || `${result.firstName} ${result.lastName}`}</Text>
+                          </Group>
+                        </Anchor>
+                    ))}
                 </Stack>
               </Popover.Dropdown>
             </Popover>
