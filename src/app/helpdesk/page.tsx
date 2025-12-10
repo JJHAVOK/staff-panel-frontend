@@ -3,21 +3,22 @@
 import { useState, useEffect } from 'react';
 import { AdminLayout } from '@/components/AdminLayout';
 import {
-  Title, Button, Group, Table, Badge, Paper, LoadingOverlay, Alert, Modal, TextInput, Stack, Textarea, Select, SegmentedControl, Menu, ActionIcon, Tooltip, Text
+  Title, Button, Group, Table, Badge, Paper, LoadingOverlay, Alert, Select, SegmentedControl, Menu, ActionIcon, Tooltip, Text, TextInput, Pagination
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { notifications } from '@mantine/notifications';
 import { 
-  IconPlus, IconLifebuoy, IconFilter, IconUser, IconUsers, IconDots, IconCheck, IconTrash, IconUserCircle, IconFlame, IconEye
+  IconPlus, IconFilter, IconUser, IconUsers, IconDots, IconCheck, IconTrash, IconUserCircle, IconFlame, IconEye, IconSearch
 } from '@tabler/icons-react';
 import api from '@/lib/api';
 import { useDisclosure } from '@mantine/hooks';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/lib/authStore';
+import { io } from 'socket.io-client'; // <--- NEW IMPORT
 
 export default function HelpdeskPage() {
   const router = useRouter();
-  const { user } = useAuthStore();
+  const { user, token } = useAuthStore();
   const userPermissions = user?.permissions || [];
   
   const canRead = userPermissions.includes('helpdesk:read');
@@ -32,6 +33,9 @@ export default function HelpdeskPage() {
   // --- FILTERS ---
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [scopeFilter, setScopeFilter] = useState('ALL'); // ALL vs MINE
+  const [search, setSearch] = useState(''); // Added search state
+  const [page, setPage] = useState(1);
+  const ITEMS_PER_PAGE = 10;
 
   const form = useForm({
     initialValues: { subject: '', message: '', priority: 'MEDIUM' },
@@ -51,6 +55,28 @@ export default function HelpdeskPage() {
   };
 
   useEffect(() => { if(canRead) fetchTickets(); }, [canRead]);
+
+  // --- ⚡️ REAL-TIME UPDATES (NEW) ---
+  useEffect(() => {
+      if (!token || !canRead) return;
+      const socket = io('https://api.pixelforgedeveloper.com/chat', {
+          auth: { token: `Bearer ${token}` },
+          transports: ['websocket']
+      });
+
+      // 1. New Ticket Logic (Prepend to list)
+      socket.on('ticket_created', (newTicket: any) => {
+          setTickets(prev => [newTicket, ...prev]);
+      });
+
+      // 2. Ticket Update Logic (Status changes, etc.)
+      socket.on('ticket_updated', (updatedTicket: any) => {
+          setTickets(prev => prev.map(t => t.id === updatedTicket.id ? { ...t, ...updatedTicket } : t));
+      });
+      
+      return () => { socket.disconnect(); };
+  }, [token, canRead]);
+  // --- END NEW LOGIC ---
 
   const handleSubmit = async (values: typeof form.values) => {
     try {
@@ -98,10 +124,16 @@ export default function HelpdeskPage() {
   const filteredTickets = tickets.filter(t => {
     const matchesStatus = statusFilter === 'ALL' || t.status === statusFilter;
     const matchesScope = scopeFilter === 'ALL' || (scopeFilter === 'MINE' && t.assignedTo?.id === userId);
-    return matchesStatus && matchesScope;
+    const matchesSearch = search === '' || 
+                          t.subject.toLowerCase().includes(search.toLowerCase()) || 
+                          t.ticketNumber.toString().includes(search) ||
+                          t.requesterEmail.toLowerCase().includes(search.toLowerCase());
+    return matchesStatus && matchesScope && matchesSearch;
   });
 
-  const rows = filteredTickets.map((t) => {
+  const paginatedTickets = filteredTickets.slice((page - 1) * ITEMS_PER_PAGE, page * ITEMS_PER_PAGE);
+
+  const rows = paginatedTickets.map((t) => {
       const isAssignedToMe = t.assignedTo?.id === userId;
       const isUnassigned = !t.assignedTo;
 
@@ -120,7 +152,7 @@ export default function HelpdeskPage() {
           <Table.Td>
              {t.assignedTo ? (
                 <Badge variant="light" color="cyan" leftSection={<IconUser size={10}/>}>
-                    {t.assignedTo.firstName}
+                   {t.assignedTo.firstName}
                 </Badge>
              ) : <Text size="xs" c="dimmed">Unassigned</Text>}
           </Table.Td>
@@ -136,7 +168,6 @@ export default function HelpdeskPage() {
                   <Menu.Label>Assignment</Menu.Label>
                   {/* Logic: Assign to me if I have perms. Unassign only if mine OR if I am manager */}
                   {(!isAssignedToMe && (canManage || isUnassigned)) && (
-                      // FIX: Ensure userId is not undefined
                       <Menu.Item leftSection={<IconUserCircle size={14}/>} onClick={(e) => handleAssignmentChange(e, t.id, userId || null)}>Assign to Me</Menu.Item>
                   )}
                   {(isAssignedToMe || canManage) && !isUnassigned && (
@@ -173,24 +204,33 @@ export default function HelpdeskPage() {
       <Paper withBorder p="md" radius="md" mb="md">
         <Group justify="space-between">
             <Group>
+                <IconSearch size={16} color="gray" />
+                <TextInput 
+                    placeholder="Search..." 
+                    value={search} 
+                    onChange={(e) => setSearch(e.currentTarget.value)}
+                    size="sm"
+                />
+            </Group>
+            <Group>
                 <IconFilter size={16} color="gray" />
                 <Text size="sm" fw={500}>Filter By:</Text>
                 <Select 
-                    data={['ALL', 'OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED']}
-                    value={statusFilter}
+                    data={['ALL', 'OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED']} 
+                    value={statusFilter} 
                     onChange={(v) => setStatusFilter(v || 'ALL')}
                     size="sm"
                     w={150}
                 />
+                <SegmentedControl 
+                    value={scopeFilter}
+                    onChange={setScopeFilter}
+                    data={[
+                        { value: 'ALL', label: <Group gap={5} align="center" wrap="nowrap"><IconUsers size={16} /><span>All Tickets</span></Group> },
+                        { value: 'MINE', label: <Group gap={5} align="center" wrap="nowrap"><IconUser size={16} /><span>My Claims</span></Group> }
+                    ]}
+                />
             </Group>
-            <SegmentedControl 
-                value={scopeFilter}
-                onChange={setScopeFilter}
-                data={[
-                    { value: 'ALL', label: <Group gap={5} align="center" wrap="nowrap"><IconUsers size={16} /><span>All Tickets</span></Group> },
-                    { value: 'MINE', label: <Group gap={5} align="center" wrap="nowrap"><IconUser size={16} /><span>My Claims</span></Group> }
-                ]}
-            />
         </Group>
       </Paper>
 
@@ -199,23 +239,31 @@ export default function HelpdeskPage() {
         {!canRead && <Alert color="red" title="Access Denied">You do not have permission to view the Helpdesk list.</Alert>}
 
         {canRead && (
-          <Table striped highlightOnHover>
-            <Table.Thead>
-              <Table.Tr>
-                <Table.Th>ID</Table.Th>
-                <Table.Th>Subject</Table.Th>
-                <Table.Th>Status</Table.Th>
-                <Table.Th>Priority</Table.Th>
-                <Table.Th>Requester</Table.Th>
-                <Table.Th>Assignee</Table.Th>
-                <Table.Th>Actions</Table.Th>
-              </Table.Tr>
-            </Table.Thead>
-            <Table.Tbody>
-                {filteredTickets.length === 0 && <Table.Tr><Table.Td colSpan={7} align="center" c="dimmed">No tickets found.</Table.Td></Table.Tr>}
-                {rows}
-            </Table.Tbody>
-          </Table>
+          <>
+            <Table striped highlightOnHover>
+                <Table.Thead>
+                <Table.Tr>
+                    <Table.Th>ID</Table.Th>
+                    <Table.Th>Subject</Table.Th>
+                    <Table.Th>Status</Table.Th>
+                    <Table.Th>Priority</Table.Th>
+                    <Table.Th>Requester</Table.Th>
+                    <Table.Th>Assignee</Table.Th>
+                    <Table.Th>Actions</Table.Th>
+                </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>
+                    {filteredTickets.length === 0 && <Table.Tr><Table.Td colSpan={7} align="center" c="dimmed">No tickets found.</Table.Td></Table.Tr>}
+                    {rows}
+                </Table.Tbody>
+            </Table>
+            
+            {filteredTickets.length > ITEMS_PER_PAGE && (
+                 <Group justify="center" p="md">
+                     <Pagination total={Math.ceil(filteredTickets.length / ITEMS_PER_PAGE)} value={page} onChange={setPage} />
+                 </Group>
+            )}
+          </>
         )}
       </Paper>
     </AdminLayout>

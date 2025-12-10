@@ -1,11 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { AdminLayout } from '@/components/AdminLayout';
 import {
   Title, Text, Button, Group, Paper, LoadingOverlay, Alert, Stack,
   Badge, ActionIcon, Textarea, Avatar, Divider,
-  SimpleGrid, ThemeIcon, rem, Menu, Grid, Checkbox
+  SimpleGrid, ThemeIcon, rem, Menu, Grid, Checkbox, ScrollArea
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { notifications } from '@mantine/notifications';
@@ -19,11 +19,12 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuthStore } from '@/lib/authStore';
 import { Dropzone, MIME_TYPES } from '@mantine/dropzone';
+import { io, Socket } from 'socket.io-client'; // <--- NEW IMPORT
 
 export default function TicketDetailPage() {
   const { id } = useParams();
   const router = useRouter();
-  const { user } = useAuthStore();
+  const { user, token } = useAuthStore();
   const userPermissions = user?.permissions || [];
   
   const canManage = userPermissions.includes('manage:helpdesk');
@@ -34,6 +35,8 @@ export default function TicketDetailPage() {
   
   const [files, setFiles] = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [socket, setSocket] = useState<Socket | null>(null); // <--- NEW STATE
+  const viewport = useRef<HTMLDivElement>(null); // <--- NEW REF FOR SCROLLING
   
   const messageForm = useForm({ initialValues: { content: '', isInternal: false } });
 
@@ -41,20 +44,65 @@ export default function TicketDetailPage() {
     try {
       const res = await api.get(`/helpdesk/${id}`);
       setTicket(res.data);
+      scrollToBottom(); // Scroll on load
     } catch (e) { console.error(e); } finally { setLoading(false); }
   };
 
   useEffect(() => { if(id) fetchTicket(); }, [id]);
 
+  // --- NEW: Real-Time Chat Connection ---
+  useEffect(() => {
+    if (!token || !id) return;
+
+    // Connect to /chat namespace
+    const newSocket = io('https://api.pixelforgedeveloper.com/chat', {
+        auth: { token: `Bearer ${token}` },
+        transports: ['websocket']
+    });
+
+    newSocket.on('connect', () => {
+        console.log('Staff Chat Connected');
+        newSocket.emit('join_ticket', id);
+    });
+
+    newSocket.on('new_message', (msg: any) => {
+        // Append new message to ticket state immediately
+        setTicket((prev: any) => {
+            if (!prev) return prev;
+            // Prevent duplicates if API updated first
+            if (prev.messages.some((m: any) => m.id === msg.id)) return prev;
+            
+            return {
+                ...prev,
+                messages: [...prev.messages, {
+                    ...msg,
+                    // Normalize socket data structure to match API if needed
+                    staffUser: msg.sender === 'STAFF' ? { email: user?.email, firstName: 'Staff' } : null 
+                }]
+            };
+        });
+        scrollToBottom();
+    });
+
+    setSocket(newSocket);
+
+    return () => { newSocket.disconnect(); };
+  }, [token, id]);
+
+  const scrollToBottom = () => {
+    setTimeout(() => viewport.current?.scrollTo({ top: viewport.current.scrollHeight, behavior: 'smooth' }), 100);
+  };
+  // --- END NEW LOGIC ---
+
   const isAssignedToMe = ticket?.assignedTo?.id === userId;
   const isUnassigned = !ticket?.assignedTo;
   
-  // Reply Logic: Managers can always reply. Agents can reply if unassigned OR assigned to them.
   const canReply = canManage || isAssignedToMe || isUnassigned; 
 
   const handleSendMessage = async (values: typeof messageForm.values) => {
     setUploading(true);
     try {
+      // 1. Send via HTTP (Backend will now Broadcast automatically via Socket)
       const messageResponse = await api.post(`/helpdesk/${id}/messages`, { 
         content: values.content, 
         isInternal: values.isInternal 
@@ -71,10 +119,12 @@ export default function TicketDetailPage() {
         }
       }
 
+      // REMOVED: socket.emit(...) <-- We trust the backend broadcast now to update our UI via the 'new_message' listener
+
       notifications.show({ title: 'Sent', message: 'Message sent.', color: 'green' });
       messageForm.reset();
       setFiles([]);
-      fetchTicket();
+      // fetchTicket(); // Optional, socket update handles the text, but fetchTicket ensures file links are fresh
     } catch (e) {
       notifications.show({ title: 'Error', message: 'Failed to send.', color: 'red' });
     } finally {
@@ -91,20 +141,19 @@ export default function TicketDetailPage() {
   };
 
   const handleEscalate = async () => {
-     try { 
+      try { 
         await api.patch(`/helpdesk/${id}`, { isEscalated: !ticket.isEscalated }); 
         fetchTicket();
         notifications.show({ title: 'Updated', message: 'Escalation status changed.', color: 'blue' });
-     } catch(e) {}
+      } catch(e) {}
   };
   
-  // --- NEW: Full Delete Logic ---
   const handleDelete = async (type: 'SOFT' | 'HARD') => {
     if(!confirm(`Are you sure you want to ${type === 'HARD' ? 'permanently' : 'archive'} delete this ticket?`)) return;
     try { 
         await api.delete(`/helpdesk/${id}?type=${type}`); 
         notifications.show({ title: 'Closed', message: `Ticket ${type === 'HARD' ? 'deleted' : 'archived'}.`, color: 'green' }); 
-        router.push('/helpdesk'); // Redirect to list
+        router.push('/helpdesk');
     } catch(e) {}
   };
 
@@ -119,42 +168,41 @@ export default function TicketDetailPage() {
 
       <Paper withBorder p="md" radius="md" mb="lg">
         <Group justify="space-between" mb="xs">
-           <Group>
+            <Group>
               <Title order={3}>{ticket.subject}</Title>
               {ticket.isEscalated && <Badge color="red" leftSection={<IconFlame size={12} />}>ESCALATED</Badge>}
-           </Group>
-           
-           <Menu shadow="md" width={200}>
-             <Menu.Target>
-               <Button variant="default" leftSection={<IconDots size={16} />}>Actions</Button>
-             </Menu.Target>
-             <Menu.Dropdown>
-               <Menu.Label>Status</Menu.Label>
-               <Menu.Item onClick={() => handleStatusChange('IN_PROGRESS')}>Mark In Progress</Menu.Item>
-               <Menu.Item onClick={() => handleStatusChange('RESOLVED')} leftSection={<IconCheck size={14} />}>Mark Resolved</Menu.Item>
-               <Menu.Item onClick={() => handleStatusChange('CLOSED')} leftSection={<IconBan size={14} />}>Mark Closed</Menu.Item>
-               
-               <Menu.Divider />
-               <Menu.Label>Management</Menu.Label>
-               <Menu.Item onClick={handleEscalate} leftSection={<IconFlame size={14} />}>
-                 {ticket.isEscalated ? 'De-Escalate' : 'Escalate Ticket'}
-               </Menu.Item>
-               
-               {/* ASSIGNMENT LOGIC */}
-               {(!isAssignedToMe && (canManage || isUnassigned)) && (
-                   // FIX: Ensure userId is valid string or null
-                   <Menu.Item leftSection={<IconUserCircle size={14}/>} onClick={() => handleAssignmentChange(userId || null)}>Assign to Me</Menu.Item>
-               )}
-               {(isAssignedToMe || canManage) && !isUnassigned && (
-                   <Menu.Item color="orange" onClick={() => handleAssignmentChange(null)}>Unassign</Menu.Item>
-               )}
+            </Group>
+            
+            <Menu shadow="md" width={200}>
+              <Menu.Target>
+                <Button variant="default" leftSection={<IconDots size={16} />}>Actions</Button>
+              </Menu.Target>
+              <Menu.Dropdown>
+                <Menu.Label>Status</Menu.Label>
+                <Menu.Item onClick={() => handleStatusChange('IN_PROGRESS')}>Mark In Progress</Menu.Item>
+                <Menu.Item onClick={() => handleStatusChange('RESOLVED')} leftSection={<IconCheck size={14} />}>Mark Resolved</Menu.Item>
+                <Menu.Item onClick={() => handleStatusChange('CLOSED')} leftSection={<IconBan size={14} />}>Mark Closed</Menu.Item>
+                
+                <Menu.Divider />
+                <Menu.Label>Management</Menu.Label>
+                <Menu.Item onClick={handleEscalate} leftSection={<IconFlame size={14} />}>
+                  {ticket.isEscalated ? 'De-Escalate' : 'Escalate Ticket'}
+                </Menu.Item>
+                
+                {/* ASSIGNMENT LOGIC */}
+                {(!isAssignedToMe && (canManage || isUnassigned)) && (
+                    <Menu.Item leftSection={<IconUserCircle size={14}/>} onClick={() => handleAssignmentChange(userId || null)}>Assign to Me</Menu.Item>
+                )}
+                {(isAssignedToMe || canManage) && !isUnassigned && (
+                    <Menu.Item color="orange" onClick={() => handleAssignmentChange(null)}>Unassign</Menu.Item>
+                )}
 
-               <Menu.Divider />
-               <Menu.Label>Danger Zone</Menu.Label>
-               <Menu.Item color="orange" leftSection={<IconTrash size={14} />} onClick={() => handleDelete('SOFT')}>Archive (Soft)</Menu.Item>
-               {canManage && <Menu.Item color="red" leftSection={<IconTrash size={14} />} onClick={() => handleDelete('HARD')}>Delete Permanently</Menu.Item>}
-             </Menu.Dropdown>
-           </Menu>
+                <Menu.Divider />
+                <Menu.Label>Danger Zone</Menu.Label>
+                <Menu.Item color="orange" leftSection={<IconTrash size={14} />} onClick={() => handleDelete('SOFT')}>Archive (Soft)</Menu.Item>
+                {canManage && <Menu.Item color="red" leftSection={<IconTrash size={14} />} onClick={() => handleDelete('HARD')}>Delete Permanently</Menu.Item>}
+              </Menu.Dropdown>
+            </Menu>
         </Group>
         
         <Group gap="xs">
@@ -177,48 +225,51 @@ export default function TicketDetailPage() {
 
       <Grid>
         <Grid.Col span={{ base: 12, md: 8 }}>
-          <Stack gap="md" mb="md">
-            {ticket.messages.map((msg: any) => {
-              const isMe = msg.staffUser?.email === user?.email;
-              const isInternal = msg.isInternal;
-              
-              return (
-                <Group key={msg.id} justify={isMe ? 'flex-end' : 'flex-start'} align="flex-start">
-                  {!isMe && <Avatar color={!msg.staffUser ? 'blue' : 'orange'} radius="xl">{!msg.staffUser ? 'C' : 'S'}</Avatar>}
-                  
-                  <Paper 
-                    withBorder 
-                    p="sm" 
-                    radius="md" 
-                    bg={isInternal ? 'yellow.0' : isMe ? 'blue.1' : 'gray.0'}
-                    style={{ maxWidth: '85%', borderColor: isInternal ? 'orange' : undefined }}
-                  >
-                    {isInternal && <Text size="xs" c="orange" fw={700} mb={4}><IconLock size={10}/> INTERNAL NOTE</Text>}
+          {/* --- SCROLLABLE CHAT AREA --- */}
+          <ScrollArea h={500} viewportRef={viewport} style={{ border: '1px solid #eee', borderRadius: '8px', padding: '10px' }}>
+            <Stack gap="md" mb="md">
+              {ticket.messages.map((msg: any) => {
+                const isMe = msg.staffUser?.email === user?.email;
+                const isInternal = msg.isInternal;
+                
+                return (
+                  <Group key={msg.id} justify={isMe ? 'flex-end' : 'flex-start'} align="flex-start">
+                    {!isMe && <Avatar color={!msg.staffUser ? 'blue' : 'orange'} radius="xl">{!msg.staffUser ? 'C' : 'S'}</Avatar>}
                     
-                    <Text size="sm" style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</Text>
-                    
-                    {msg.documents && msg.documents.length > 0 && (
-                        <SimpleGrid cols={3} spacing="xs" mt="sm">
-                          {msg.documents.map((doc: any) => (
-                            <Paper key={doc.id} withBorder p={4} style={{ cursor: 'pointer' }}>
-                                <Group justify="space-between" gap={4}>
-                                  <ThemeIcon variant="light" color="gray" size="sm"><IconPaperclip size={12}/></ThemeIcon>
-                                  <Text size="xs" lineClamp={1}>{doc.name}</Text>
-                                </Group>
-                            </Paper>
-                          ))}
-                        </SimpleGrid>
-                    )}
+                    <Paper 
+                      withBorder 
+                      p="sm" 
+                      radius="md" 
+                      bg={isInternal ? 'yellow.0' : isMe ? 'blue.1' : 'gray.0'}
+                      style={{ maxWidth: '85%', borderColor: isInternal ? 'orange' : undefined }}
+                    >
+                      {isInternal && <Text size="xs" c="orange" fw={700} mb={4}><IconLock size={10}/> INTERNAL NOTE</Text>}
+                      
+                      <Text size="sm" style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</Text>
+                      
+                      {msg.documents && msg.documents.length > 0 && (
+                          <SimpleGrid cols={3} spacing="xs" mt="sm">
+                            {msg.documents.map((doc: any) => (
+                              <Paper key={doc.id} withBorder p={4} style={{ cursor: 'pointer' }}>
+                                  <Group justify="space-between" gap={4}>
+                                    <ThemeIcon variant="light" color="gray" size="sm"><IconPaperclip size={12}/></ThemeIcon>
+                                    <Text size="xs" lineClamp={1}>{doc.name}</Text>
+                                  </Group>
+                              </Paper>
+                            ))}
+                          </SimpleGrid>
+                      )}
 
-                    <Text size="xs" c="dimmed" mt={4} ta="right">
-                       {msg.staffUser ? msg.staffUser.firstName : ticket.requesterName} • {new Date(msg.createdAt).toLocaleString()}
-                    </Text>
-                  </Paper>
-                  {isMe && <Avatar color="blue" radius="xl">Me</Avatar>}
-                </Group>
-              );
-            })}
-          </Stack>
+                      <Text size="xs" c="dimmed" mt={4} ta="right">
+                         {msg.staffUser ? msg.staffUser.firstName : ticket.requesterName} • {new Date(msg.createdAt).toLocaleString()}
+                      </Text>
+                    </Paper>
+                    {isMe && <Avatar color="blue" radius="xl">Me</Avatar>}
+                  </Group>
+                );
+              })}
+            </Stack>
+          </ScrollArea>
 
           <Paper withBorder p="md" radius="md" mt="xl" bg={!canReply ? 'gray.1' : undefined}>
             {!canReply ? (

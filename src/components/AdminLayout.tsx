@@ -148,9 +148,12 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
              <NavLink href="/marketing" label="Marketing" leftSection={<IconMailForward size="1rem" stroke={1.5} />} active={pathname === '/marketing'} />
           )}
 
-          {/* SUPPORT */}
+          {/* SUPPORT / HELPDESK (FIXED SECTION) */}
           {hasPerm('helpdesk:read') && (
-             <NavLink href="/helpdesk" label="Helpdesk" leftSection={<IconLifebuoy size="1rem" stroke={1.5} />} active={pathname === '/helpdesk'} />
+             <NavLink label="Helpdesk" leftSection={<IconLifebuoy size="1rem" stroke={1.5} />}>
+                 <NavLink href="/helpdesk" label="Tickets" active={pathname === '/helpdesk'} />
+                 {hasPerm('helpdesk:manage') && <NavLink href="/helpdesk/kb" label="Knowledge Base" active={pathname === '/helpdesk/kb'} />}
+             </NavLink>
           )}
 
           {/* INBOX */}
@@ -168,12 +171,9 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
           <NavLink label="System" leftSection={<IconSettings size="1rem" stroke={1.5} />}>
              {hasPerm('system:settings:manage') && <NavLink href="/system/automation" label="Automation" leftSection={<IconRobot size="1rem" stroke={1.5} />} active={pathname.startsWith('/system/automation')} />}
              
-             {/* --- 👇 FIXED: Updated to /system/webhooks --- */}
              {hasPerm('system:webhooks:read') && <NavLink href="/system/webhooks" label="Webhooks" leftSection={<IconWebhook size="1rem" stroke={1.5} />} active={pathname === '/system/webhooks'} />}
              
-             {/* --- 👇 NEW: Added Scheduler/Cron --- */}
              {hasPerm('system:settings:manage') && <NavLink href="/system/cron" label="Cron Jobs" leftSection={<IconClock size="1rem" stroke={1.5} />} active={pathname === '/system/cron'} />}
-             {/* --- 👆 END NEW --- */}
 
              {hasPerm('system:settings:read') && <NavLink href="/settings" label="Platform Settings" active={pathname === '/settings'} />}
              {hasPerm('system:monitoring:read') && <NavLink href="/status" label="System Health" active={pathname === '/status'} />}
