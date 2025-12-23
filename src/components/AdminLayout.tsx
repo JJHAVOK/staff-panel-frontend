@@ -17,7 +17,7 @@ import {
   IconMail, IconShieldLock, IconHistory, IconScan, IconRobot, IconWebhook, IconClock, IconTicket, IconBook, IconChevronDown, IconUserCircle,
   IconSun, IconMoon, IconActivity,
 } from '@tabler/icons-react';
-import api from '@/lib/api';
+import api from '@/lib/api'; // <--- Ensure this imports our updated api.ts
 import Link from 'next/link';
 import { GlobalClockWidget } from '@/components/GlobalClockWidget';
 import { NotificationBell } from '@/components/NotificationBell';
@@ -32,7 +32,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const { user, token, clearAuth } = useAuthStore();
-  const { siteName, fetchSettings, darkSidebar } = useSettingsStore(); 
+  const { siteName, fetchSettings, darkSidebar } = useSettingsStore();
   const { setColorScheme } = useMantineColorScheme();
   const computedColorScheme = useComputedColorScheme('dark', { getInitialValueInEffect: true });
   const userPermissions = user?.permissions || [];
@@ -43,8 +43,29 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
   const [popoverOpened, setPopoverOpened] = useState(false);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
 
-  useEffect(() => { const u = useAuthStore.persist.onFinishHydration(() => setIsHydrated(true)); useAuthStore.persist.rehydrate(); return () => u(); }, []);
-  useEffect(() => { if (isHydrated) { if (!useAuthStore.getState().token) router.replace('/login'); else fetchSettings(); } }, [isHydrated, router, fetchSettings]);
+  // 1. HYDRATION & AUTH CHECK
+  useEffect(() => { 
+      const u = useAuthStore.persist.onFinishHydration(() => setIsHydrated(true)); 
+      useAuthStore.persist.rehydrate(); 
+      return () => u(); 
+  }, []);
+
+  // 2. ACTIVE SESSION VALIDATION (The Fix)
+  useEffect(() => { 
+      if (isHydrated) { 
+          if (!useAuthStore.getState().token) {
+              router.replace('/login');
+          } else {
+              // ⚡️ PULSE CHECK: Ask server "Am I still valid?"
+              // If this returns 401, the api.ts interceptor will logout.
+              api.get('/auth/profile').catch(() => {
+                  // Error handled by interceptor, but we catch here to prevent React console errors
+              });
+              
+              fetchSettings(); 
+          }
+      } 
+  }, [isHydrated, router, fetchSettings]);
 
   const toggleColorScheme = () => { setColorScheme(computedColorScheme === 'dark' ? 'light' : 'dark'); };
 
@@ -53,7 +74,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
     setSearchLoading(true); setPopoverOpened(true);
     try { const response = await api.get(`/search?q=${searchTerm}`); setSearchResults(response.data); } catch (error) { setSearchResults([]); } finally { setSearchLoading(false); }
   }, [searchTerm]);
-  
+
   useEffect(() => { const t = setTimeout(() => { if (searchTerm.length > 1) { fetchSearch(); } }, 300); return () => clearTimeout(t); }, [searchTerm, fetchSearch]);
 
   const handleLogout = async () => { try { await api.post('/auth/logout'); } catch(e) {} clearAuth(); router.replace('/login'); };
@@ -69,7 +90,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
         case 'product': return `/ecommerce/products/${result.id}`;
         case 'ticket': return `/helpdesk/${result.id}`;
         case 'project': return `/projects/${result.id}`;
-        case 'article': return `/helpdesk/kb`; 
+        case 'article': return `/helpdesk/kb`;
         case 'inbox': return `/inbox`;
         case 'webhook': return `/system/webhooks`;
         case 'apikey': return `/api-keys`;
@@ -92,11 +113,18 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
   } : { variant: "light" };
 
   if (!isHydrated || !token) return <Skeleton height="100vh" />;
-  
+
   return (
-    <AppShell header={{ height: 0 }} navbar={{ width: 250, breakpoint: 'sm', collapsed: { mobile: !opened } }} padding="md" styles={{ main: { background: 'var(--mantine-color-body)' } }}>
+    <AppShell header={{ height: 60 }} navbar={{ width: 250, breakpoint: 'sm', collapsed: { mobile: !opened } }} padding="md" styles={{ main: { background: 'var(--mantine-color-body)' } }}>
+      <AppShell.Header>
+         <Group justify="space-between" align="center" h={60} px="md" style={{ backgroundColor: isSidebarDark ? '#1A1B1E' : 'white', borderBottom: sidebarBorder }}>
+           <Group>
+             <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" />
+             {siteName ? <Title order={3} style={{ fontFamily: 'var(--mantine-font-headings)', letterSpacing: '-0.5px' }}>{siteName}</Title> : <Skeleton height={20} width={120} />}
+           </Group>
+         </Group>
+      </AppShell.Header>
       <AppShell.Navbar p="md" style={{ background: sidebarBg, borderRight: sidebarBorder }}>
-        <AppShell.Section><Group px="md" mb="xl" justify="space-between">{siteName ? <Title order={3} style={{ fontFamily: 'var(--mantine-font-headings)', letterSpacing: '-0.5px', color: isSidebarDark ? 'white' : 'inherit' }}>{siteName}</Title> : <Skeleton height={20} width={120} />}<Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" color={isSidebarDark ? 'white' : 'black'} /></Group></AppShell.Section>
         <AppShell.Section grow component={ScrollArea}>
           <NavLink href="/" label="Dashboard" leftSection={<IconHome2 size="1rem" stroke={1.5} />} active={pathname === '/'} {...navStyles} />
           {(hasPerm('user:read') || hasPerm('rbac:read') || hasPerm('hr:read')) && (
@@ -137,12 +165,12 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
           {(hasPerm('security:read') || hasPerm('system:audit:read')) && (
             <NavLink label="Security & Logs" leftSection={<IconShieldLock size="1rem" stroke={1.5} />} {...navStyles}>
                 {hasPerm('security:read') && (
-                    <NavLink 
-                        href="/system/soc" 
-                        label="SOC Dashboard" 
-                        leftSection={<IconActivity size="1rem" stroke={1.5} />} 
-                        active={pathname === '/system/soc'} 
-                        {...navStyles} 
+                    <NavLink
+                        href="/system/soc"
+                        label="SOC Dashboard"
+                        leftSection={<IconActivity size="1rem" stroke={1.5} />}
+                        active={pathname === '/system/soc'}
+                        {...navStyles}
                     />
                 )}
                 {hasPerm('security:read') && <NavLink href="/security" label="Global Security" leftSection={<IconLock size="1rem" stroke={1.5} />} active={pathname === '/security'} {...navStyles} />}
@@ -150,17 +178,15 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
             </NavLink>
           )}
           <NavLink label="System" leftSection={<IconSettings size="1rem" stroke={1.5} />} {...navStyles}>
-             {/* 👇 NEW SEO STUDIO LINK */}
              {hasPerm('system:settings:manage') && (
-                 <NavLink 
-                    href="/system/seo" 
-                    label="SEO Studio" 
-                    leftSection={<IconSearch size="1rem" stroke={1.5} />} 
-                    active={pathname === '/system/seo'} 
-                    {...navStyles} 
+                 <NavLink
+                    href="/system/seo"
+                    label="SEO Studio"
+                    leftSection={<IconSearch size="1rem" stroke={1.5} />}
+                    active={pathname === '/system/seo'}
+                    {...navStyles}
                  />
              )}
-             {/* 👆 END NEW */}
              {hasPerm('system:settings:manage') && <NavLink href="/system/automation" label="Automation" leftSection={<IconRobot size="1rem" stroke={1.5} />} active={pathname.startsWith('/system/automation')} {...navStyles} />}
              {hasPerm('system:webhooks:read') && <NavLink href="/system/webhooks" label="Webhooks" leftSection={<IconWebhook size="1rem" stroke={1.5} />} active={pathname === '/system/webhooks'} {...navStyles} />}
              {hasPerm('system:cron:manage') && <NavLink href="/system/cron" label="Cron Jobs" leftSection={<IconClock size="1rem" stroke={1.5} />} active={pathname === '/system/cron'} {...navStyles} />}
@@ -199,7 +225,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
              {isHydrated && userPermissions.includes('own:timesheets') && <GlobalClockWidget />}
              <ActionIcon onClick={toggleColorScheme} variant="default" size="lg" aria-label="Toggle color scheme" style={{ border: '1px solid var(--mantine-color-default-border)' }}>{computedColorScheme === 'dark' ? <IconSun size={18} /> : <IconMoon size={18} />}</ActionIcon>
              <NotificationBell />
-             
+
              <Menu shadow="md" width={200} withArrow>
               <Menu.Target>
                 <Group gap="xs" style={{ cursor: 'pointer', paddingLeft: 10 }}>
@@ -221,7 +247,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
             </Menu>
           </Group>
         </Group>
-        
+
         {children}
       </AppShell.Main>
     </AppShell>

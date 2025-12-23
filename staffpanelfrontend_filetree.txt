@@ -105,6 +105,8 @@
 │   │   │   │   └── page.tsx
 │   │   │   ├── documentation
 │   │   │   │   └── page.tsx
+│   │   │   ├── seo
+│   │   │   │   └── page.tsx
 │   │   │   ├── soc
 │   │   │   │   └── page.tsx
 │   │   │   └── webhooks
@@ -135,4 +137,4 @@
 ├── staff.pixelforgedeveloper.com@0.1.0
 └── tsconfig.json
 
-57 directories, 79 files
+58 directories, 80 files
