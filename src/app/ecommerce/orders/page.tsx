@@ -14,6 +14,8 @@ import {
 import api from '@/lib/api';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/lib/authStore';
+// 👇 NEW IMPORT
+import { DataActions } from '@/components/DataActions/DataActions';
 
 interface Order {
   id: string;
@@ -164,10 +166,6 @@ export default function OrdersPage() {
     openEdit();
   };
 
-  const getTrackingLink = (carrier: string, trackingNumber: string) => {
-    return `https://www.google.com/search?q=${trackingNumber}`;
-  };
-
   const rows = orders.map((order) => (
     <Table.Tr key={order.id} style={{ cursor: 'pointer' }} onClick={() => router.push(`/ecommerce/orders/${order.id}`)}>
       <Table.Td fw={700} c="blue">{order.orderNumber}</Table.Td>
@@ -239,14 +237,14 @@ export default function OrdersPage() {
                          {shipRates.map((rate: any) => (
                              <Paper key={rate.id} withBorder p="sm" radius="sm">
                                  <Radio 
-                                    value={rate.id} 
-                                    label={
-                                        <Group justify="space-between" w="100%">
-                                            <Text size="sm">{rate.carrier} {rate.service}</Text>
-                                            <Text fw={700}>${rate.price.toFixed(2)}</Text>
-                                        </Group>
-                                    } 
-                                 />
+                                     value={rate.id} 
+                                     label={
+                                         <Group justify="space-between" w="100%">
+                                             <Text size="sm">{rate.carrier} {rate.service}</Text>
+                                             <Text fw={700}>${rate.price.toFixed(2)}</Text>
+                                         </Group>
+                                     } 
+                                  />
                              </Paper>
                          ))}
                      </Stack>
@@ -258,7 +256,11 @@ export default function OrdersPage() {
 
       <Group justify="space-between" mb="xl">
         <Group><IconPackage size={32}/><Title order={2}>Orders</Title></Group>
-        {canManage && <Button onClick={openCreate} leftSection={<IconPlus size={16} />}>Create Order</Button>}
+        <Group>
+            {/* 👇 ADDED EXPORT BUTTON */}
+            <DataActions entity="orders" canImport={false} />
+            {canManage && <Button onClick={openCreate} leftSection={<IconPlus size={16} />}>Create Order</Button>}
+        </Group>
       </Group>
 
       <Paper withBorder p="md" radius="md">

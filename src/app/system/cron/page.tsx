@@ -6,7 +6,7 @@ import {
   Title, Button, Group, Table, Badge, Paper, LoadingOverlay, Modal, TextInput, Stack, Text, Code, ActionIcon, Select, Drawer, ScrollArea, Divider, Switch, Tooltip, Menu, Alert 
 } from '@mantine/core';
 import { 
-  IconPlus, IconClock, IconTrash, IconRobot, IconBook, IconDots, IconEdit, IconPlayerPause, IconPlayerPlay, IconAlertTriangle, IconInfoCircle 
+  IconPlus, IconClock, IconTrash, IconRobot, IconBook, IconDots, IconEdit, IconPlayerPause, IconPlayerPlay, IconAlertTriangle, IconInfoCircle, IconCloudUpload 
 } from '@tabler/icons-react';
 import { useForm } from '@mantine/form';
 import { notifications } from '@mantine/notifications';
@@ -28,11 +28,13 @@ const CRON_OPTIONS = [
 ];
 
 const EVENT_OPTIONS = [
+    { value: 'RUN_BACKUP', label: 'System: Full Backup (DB + Uploads) to R2' }, // <--- NEW
     { value: 'RUN_CLEANUP_LOGS', label: 'Maintenance: Cleanup Old Logs' },
     { value: 'RUN_SLA_CHECK', label: 'Support: SLA Monitor (Auto-Escalate)' },
     { value: 'RUN_INVENTORY_CHECK', label: 'Store: Low Stock Alert' },
     { value: 'RUN_OVERDUE_INVOICES', label: 'Finance: Overdue Payment Reminders' },
     { value: 'RUN_ABANDONED_CART', label: 'Marketing: Abandoned Cart Recovery' },
+    { value: 'RUN_LEAD_SCORING', label: 'AI: Lead Scoring & Sentiment Analysis' },
 ];
 
 export default function CronPage() {
@@ -113,6 +115,15 @@ export default function CronPage() {
           fetchJobs();
       } catch(e) { notifications.show({ title: 'Error', message: 'Delete failed', color: 'red' }); }
   };
+    
+  const handleRunNow = async (e: React.MouseEvent, id: string) => {
+      e.stopPropagation();
+      try {
+          await api.post(`/scheduler/${id}/run`);
+          notifications.show({ title: 'Triggered', message: 'Job executed successfully', color: 'green' });
+          fetchJobs();
+      } catch(e) { notifications.show({ title: 'Error', message: 'Failed to run job', color: 'red' }); }
+  };
 
   return (
     <AdminLayout>
@@ -148,7 +159,7 @@ export default function CronPage() {
                                 </Group>
                             </Table.Td>
                             <Table.Td>
-                                <Badge variant="outline" color="violet" leftSection={<IconRobot size={10}/>}>
+                                <Badge variant="outline" color={j.triggerEvent === 'RUN_BACKUP' ? 'violet' : 'blue'} leftSection={j.triggerEvent === 'RUN_BACKUP' ? <IconCloudUpload size={10}/> : <IconRobot size={10}/>}>
                                     {EVENT_OPTIONS.find(e => e.value === j.triggerEvent)?.label || j.triggerEvent}
                                 </Badge>
                             </Table.Td>
@@ -160,6 +171,12 @@ export default function CronPage() {
                                     </Menu.Target>
                                     <Menu.Dropdown>
                                         <Menu.Label>Manage</Menu.Label>
+                                        <Menu.Item 
+                                            leftSection={<IconPlayerPlay size={14}/>} 
+                                            onClick={(e) => handleRunNow(e, j.id)}
+                                        >
+                                            Run Now
+                                        </Menu.Item>
                                         <Menu.Item leftSection={<IconEdit size={14}/>} onClick={() => openEdit(j)}>
                                             Edit Details
                                         </Menu.Item>
@@ -259,11 +276,13 @@ export default function CronPage() {
                       <Table withTableBorder withColumnBorders>
                           <Table.Thead><Table.Tr><Table.Th>Event ID</Table.Th><Table.Th>Function</Table.Th></Table.Tr></Table.Thead>
                           <Table.Tbody>
+                              <Table.Tr><Table.Td><Code>RUN_BACKUP</Code></Table.Td><Table.Td>Dumps Postgres DB, Zips Uploads, Uploads encrypted archive to Cloudflare R2.</Table.Td></Table.Tr>
                               <Table.Tr><Table.Td><Code>RUN_CLEANUP_LOGS</Code></Table.Td><Table.Td>Deletes Audit & Security logs older than 90 days to save database space.</Table.Td></Table.Tr>
                               <Table.Tr><Table.Td><Code>RUN_SLA_CHECK</Code></Table.Td><Table.Td>Scans for OPEN tickets with no activity for 24h. Marks them 'Escalated' and notifies admins.</Table.Td></Table.Tr>
                               <Table.Tr><Table.Td><Code>RUN_INVENTORY_CHECK</Code></Table.Td><Table.Td>Scans for products with Stock &lt; 5. Sends a "Low Stock" alert to admins.</Table.Td></Table.Tr>
                               <Table.Tr><Table.Td><Code>RUN_OVERDUE_INVOICES</Code></Table.Td><Table.Td>Finds pending orders older than 7 days. Sends a payment reminder email to the customer.</Table.Td></Table.Tr>
                               <Table.Tr><Table.Td><Code>RUN_ABANDONED_CART</Code></Table.Td><Table.Td>Checks for carts abandoned for &gt; 24h and emails recovery link (Marketing Module).</Table.Td></Table.Tr>
+                              <Table.Tr><Table.Td><Code>RUN_LEAD_SCORING</Code></Table.Td><Table.Td>AI Engine: Updates Contact Lead Scores and Ticket Sentiment.</Table.Td></Table.Tr>
                           </Table.Tbody>
                       </Table>
                   </div>

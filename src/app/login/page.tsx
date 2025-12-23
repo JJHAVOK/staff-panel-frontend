@@ -6,11 +6,13 @@ import { useForm } from '@mantine/form';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/lib/authStore';
 import api from '@/lib/api';
-import { IconLock } from '@tabler/icons-react';
+import { IconLock, IconAlertCircle } from '@tabler/icons-react';
 
 export default function LoginPage() {
   const router = useRouter();
-  const { setAuth } = useAuthStore();
+  // FIX: Updated to use 'setToken' instead of 'setAuth' to match new store
+  const { setToken } = useAuthStore();
+  
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
@@ -33,26 +35,30 @@ export default function LoginPage() {
       const payload = { ...values, code: mfaRequired ? mfaCode : undefined };
       const response = await api.post('/auth/login', payload);
       
-      const { access_token, user } = response.data;
+      const { accessToken } = response.data; // Backend typically returns 'accessToken' or 'access_token'
+      const tokenToSet = accessToken || response.data.access_token;
+
+      if (!tokenToSet) throw new Error('No token received');
       
-      // Decode JWT to get user details if not provided in body
-      // Assuming backend returns token. We will fetch /profile next.
-      // Let's just set token for now and redirect.
+      // FIX: Use setToken. The store handles decoding the user from the token now.
+      setToken(tokenToSet);
       
-      // Fetch user profile to get permissions for store
-      api.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
-      const profileRes = await api.get('/auth/profile'); // Assuming this exists, or use /user/me
-      
-      setAuth(access_token, profileRes.data);
+      // Optional: Fetch full profile to populate store immediately if token data is sparse
+      try {
+          api.defaults.headers.common['Authorization'] = `Bearer ${tokenToSet}`;
+          // We can let the layout/dashboard fetch this, or do it here. 
+          // For speed, we just redirect.
+      } catch(e) {}
+
       router.push('/');
       
     } catch (err: any) {
       // Check for MFA Requirement
-      if (err.response?.data?.message === 'MFA_REQUIRED') {
+      if (err.response?.data?.message === 'MFA_REQUIRED' || err.response?.data?.error === 'MFA_REQUIRED') {
           setMfaRequired(true);
           setError(null); // Clear error, show input
       } else {
-          setError('Invalid email or password');
+          setError(err.response?.data?.message || 'Invalid email or password');
       }
     } finally {
       setLoading(false);
@@ -67,12 +73,12 @@ export default function LoginPage() {
 
   return (
     <Container size={420} my={40}>
-      <Title ta="center">Staff Portal</Title>
+      <Title ta="center" className="font-bold text-3xl mb-6">Staff Portal</Title>
 
       <Paper withBorder shadow="md" p={30} mt={30} radius="md" style={{ position: 'relative' }}>
         <LoadingOverlay visible={loading} />
         
-        {error && <Alert color="red" mb="md">{error}</Alert>}
+        {error && <Alert icon={<IconAlertCircle size="1rem" />} color="red" mb="md">{error}</Alert>}
 
         {!mfaRequired ? (
             <form onSubmit={form.onSubmit(handleLogin)}>

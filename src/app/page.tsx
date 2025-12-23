@@ -1,8 +1,8 @@
 'use client';
 
 import { AdminLayout } from '@/components/AdminLayout';
-import { Title, Grid, Paper, Text, Group, ThemeIcon, SimpleGrid, Stack, RingProgress, Loader } from '@mantine/core';
-import { IconUsers, IconShoppingCart, IconCoin, IconPackage, IconTicket, IconAlertTriangle } from '@tabler/icons-react';
+import { Title, Grid, Paper, Text, Group, ThemeIcon, SimpleGrid, Stack, RingProgress, Loader, Center } from '@mantine/core';
+import { IconUsers, IconShoppingCart, IconCoin, IconPackage, IconTicket, IconMoodSmile, IconMoodSad, IconRobot } from '@tabler/icons-react';
 import { AreaChart } from '@mantine/charts';
 import { useEffect, useState } from 'react';
 import api from '@/lib/api';
@@ -26,13 +26,28 @@ function StatCard({ title, value, icon, color, subtext }: any) {
 export default function Dashboard() {
   const { user } = useAuthStore();
   const [stats, setStats] = useState<any>(null);
+  const [aiStats, setAiStats] = useState<any>({ happy: 0, angry: 0, neutral: 0 }); // New AI State
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.get('/analytics/dashboard')
-      .then(res => setStats(res.data))
-      .catch(() => console.error('Failed to load stats'))
-      .finally(() => setLoading(false));
+    const load = async () => {
+        try {
+            // 1. Load your existing analytics
+            const res = await api.get('/analytics/dashboard');
+            setStats(res.data);
+
+            // 2. Load Ticket Sentiment (Helper fetch)
+            const ticketsRes = await api.get('/helpdesk');
+            const tickets = ticketsRes.data || [];
+            const happy = tickets.filter((t: any) => t.sentimentLabel === 'HAPPY').length;
+            const angry = tickets.filter((t: any) => t.sentimentLabel === 'ANGRY').length;
+            const neutral = tickets.length - happy - angry;
+            setAiStats({ happy, angry, neutral });
+
+        } catch(e) { console.error(e); } 
+        finally { setLoading(false); }
+    };
+    load();
   }, []);
 
   if (loading) return <AdminLayout><Loader /></AdminLayout>;
@@ -43,7 +58,7 @@ export default function Dashboard() {
       <Title order={2} mb="lg">Dashboard Overview</Title>
       
       <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} mb="lg">
-        {/* HR Stats */}
+        {/* --- EXISTING STATS --- */}
         {stats.totalStaff !== undefined && (
           <StatCard 
             title="Total Staff" 
@@ -54,7 +69,6 @@ export default function Dashboard() {
           />
         )}
         
-        {/* Finance Stats */}
         {stats.totalRevenue !== undefined && (
           <StatCard 
             title="Total Revenue" 
@@ -64,7 +78,6 @@ export default function Dashboard() {
           />
         )}
 
-        {/* E-commerce Stats */}
         {stats.totalOrders !== undefined && (
           <StatCard 
             title="Total Orders" 
@@ -74,7 +87,6 @@ export default function Dashboard() {
           />
         )}
 
-        {/* Product Stats */}
         {stats.activeProducts !== undefined && (
           <StatCard 
             title="Active Products" 
@@ -87,7 +99,7 @@ export default function Dashboard() {
       </SimpleGrid>
       
       <Grid>
-        {/* Revenue Chart */}
+        {/* Revenue Chart (Existing) */}
         {stats.revenueChart && (
           <Grid.Col span={{ base: 12, md: 8 }}>
              <Paper withBorder p="md" radius="md">
@@ -103,9 +115,10 @@ export default function Dashboard() {
           </Grid.Col>
         )}
         
-        {/* Support / Health Widgets */}
+        {/* Support / AI Widget (Merged) */}
         <Grid.Col span={{ base: 12, md: 4 }}>
            <Stack>
+             {/* Ticket Status */}
              {stats.openTickets !== undefined && (
                <Paper withBorder p="md" radius="md">
                   <Title order={4} mb="md">Support Status</Title>
@@ -126,7 +139,27 @@ export default function Dashboard() {
                </Paper>
              )}
 
-             {/* Add more widgets here later */}
+             {/* --- 👇 NEW AI SENTIMENT WIDGET 👇 --- */}
+             <Paper withBorder p="md" radius="md">
+                  <Title order={4} mb="md">Customer Sentiment (AI)</Title>
+                  <Group>
+                      <RingProgress
+                        size={100}
+                        thickness={8}
+                        sections={[
+                            { value: (aiStats.happy / (stats.openTickets || 1)) * 100, color: 'green' },
+                            { value: (aiStats.angry / (stats.openTickets || 1)) * 100, color: 'red' },
+                            { value: (aiStats.neutral / (stats.openTickets || 1)) * 100, color: 'gray' },
+                        ]}
+                        label={<Center><IconRobot size={20} /></Center>}
+                      />
+                      <Stack gap={0}>
+                          <Group gap="xs"><IconMoodSmile size={14} color="green"/><Text size="xs">Happy: {aiStats.happy}</Text></Group>
+                          <Group gap="xs"><IconMoodSad size={14} color="red"/><Text size="xs">Angry: {aiStats.angry}</Text></Group>
+                      </Stack>
+                  </Group>
+             </Paper>
+             {/* --- 👆 END NEW --- */}
            </Stack>
         </Grid.Col>
       </Grid>

@@ -14,6 +14,8 @@ import { useAuthStore } from '@/lib/authStore';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { modals } from '@mantine/modals';
+// 👇 NEW IMPORT
+import { DataActions } from '@/components/DataActions/DataActions';
 
 export default function OrganizationsPage() {
   const router = useRouter();
@@ -148,7 +150,12 @@ export default function OrganizationsPage() {
            <IconBuildingSkyscraper size={32} />
            <Title order={2}>Organizations</Title>
         </Group>
-        {canCreate && <Button leftSection={<IconPlus size={16}/>} onClick={openCreate}>New Organization</Button>}
+        
+        <Group>
+            {/* 👇 ADDED EXPORT/IMPORT BUTTONS */}
+            <DataActions entity="organizations" onImportSuccess={fetchData} />
+            {canCreate && <Button leftSection={<IconPlus size={16}/>} onClick={openCreate}>New Organization</Button>}
+        </Group>
       </Group>
 
       <Paper withBorder radius="md">

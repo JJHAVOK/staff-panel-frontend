@@ -1,0 +1,138 @@
+.
+├── 366
+├── Dockerfile
+├── eslint.config.mjs
+├── next
+├── next.config.ts
+├── next-env.d.ts
+├── package.json
+├── package-lock.json
+├── postcss.config.mjs
+├── public
+│   ├── file.svg
+│   ├── globe.svg
+│   ├── next.svg
+│   ├── vercel.svg
+│   └── window.svg
+├── README.md
+├── src
+│   ├── app
+│   │   ├── api-keys
+│   │   │   └── page.tsx
+│   │   ├── audit
+│   │   │   └── page.tsx
+│   │   ├── billing
+│   │   │   ├── cancel
+│   │   │   │   └── page.tsx
+│   │   │   ├── page.tsx
+│   │   │   └── success
+│   │   │       └── page.tsx
+│   │   ├── crm
+│   │   │   ├── contacts
+│   │   │   │   ├── [id]
+│   │   │   │   │   └── page.tsx
+│   │   │   │   └── page.tsx
+│   │   │   ├── opportunities
+│   │   │   │   ├── [id]
+│   │   │   │   │   └── page.tsx
+│   │   │   │   └── page.tsx
+│   │   │   └── organizations
+│   │   │       ├── [id]
+│   │   │       │   └── page.tsx
+│   │   │       └── page.tsx
+│   │   ├── ecommerce
+│   │   │   ├── inventory
+│   │   │   │   └── page.tsx
+│   │   │   ├── orders
+│   │   │   │   ├── [id]
+│   │   │   │   │   └── page.tsx
+│   │   │   │   └── page.tsx
+│   │   │   ├── products
+│   │   │   │   └── page.tsx
+│   │   │   ├── promotions
+│   │   │   │   └── page.tsx
+│   │   │   └── returns
+│   │   │       └── page.tsx
+│   │   ├── faq
+│   │   │   └── page.tsx
+│   │   ├── favicon.ico
+│   │   ├── globals.css
+│   │   ├── helpdesk
+│   │   │   ├── [id]
+│   │   │   │   └── page.tsx
+│   │   │   ├── kb
+│   │   │   │   └── page.tsx
+│   │   │   └── page.tsx
+│   │   ├── inbox
+│   │   │   ├── [id]
+│   │   │   │   └── page.tsx
+│   │   │   └── page.tsx
+│   │   ├── layout.tsx
+│   │   ├── leave
+│   │   │   └── page.tsx
+│   │   ├── login
+│   │   │   └── page.tsx
+│   │   ├── marketing
+│   │   │   └── page.tsx
+│   │   ├── page.tsx
+│   │   ├── procurement
+│   │   │   ├── orders
+│   │   │   │   └── page.tsx
+│   │   │   ├── page.tsx
+│   │   │   └── vendors
+│   │   │       ├── [id]
+│   │   │       │   └── page.tsx
+│   │   │       └── page.tsx
+│   │   ├── projects
+│   │   │   ├── [id]
+│   │   │   │   └── page.tsx
+│   │   │   └── page.tsx
+│   │   ├── roles
+│   │   │   └── page.tsx
+│   │   ├── security
+│   │   │   └── page.tsx
+│   │   ├── settings
+│   │   │   └── page.tsx
+│   │   ├── status
+│   │   │   └── page.tsx
+│   │   ├── system
+│   │   │   ├── automation
+│   │   │   │   ├── editor
+│   │   │   │   │   └── [id]
+│   │   │   │   │       └── page.tsx
+│   │   │   │   └── page.tsx
+│   │   │   ├── cron
+│   │   │   │   └── page.tsx
+│   │   │   ├── documentation
+│   │   │   │   └── page.tsx
+│   │   │   ├── soc
+│   │   │   │   └── page.tsx
+│   │   │   └── webhooks
+│   │   │       └── page.tsx
+│   │   ├── timesheets
+│   │   │   └── page.tsx
+│   │   ├── users
+│   │   │   ├── [id]
+│   │   │   │   └── page.tsx
+│   │   │   └── page.tsx
+│   │   └── user-settings
+│   │       └── page.tsx
+│   ├── components
+│   │   ├── AdminLayout.tsx
+│   │   ├── BillingManager.tsx
+│   │   ├── DataActions
+│   │   │   └── DataActions.tsx
+│   │   ├── DynamicThemeProvider.tsx
+│   │   ├── GlobalClockWidget.tsx
+│   │   ├── NotificationBell.tsx
+│   │   └── UserAvatar.tsx
+│   ├── lib
+│   │   ├── api.ts
+│   │   ├── authStore.ts
+│   │   └── settingsStore.ts
+│   └── theme.ts
+├── staffpanelfrontend_filetree.txt
+├── staff.pixelforgedeveloper.com@0.1.0
+└── tsconfig.json
+
+57 directories, 79 files

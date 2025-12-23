@@ -14,11 +14,13 @@ import { notifications } from '@mantine/notifications';
 import { 
   IconAlertTriangle, IconPlus, IconTrash, IconBox, 
   IconPhoto, IconUpload, IconX, IconPencil, IconDots, 
-  IconQrcode, IconPrinter // <-- NEW ICONS
+  IconQrcode, IconPrinter
 } from '@tabler/icons-react';
 import api from '@/lib/api';
 import { useAuthStore } from '@/lib/authStore';
 import { useRouter } from 'next/navigation';
+// 👇 NEW IMPORT
+import { DataActions } from '@/components/DataActions/DataActions';
 
 interface Product {
   id: string;
@@ -78,10 +80,8 @@ export default function ProductsPage() {
   const [modalOpened, { open, close }] = useDisclosure(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   
-  // --- 👇 NEW: QR State 👇 ---
   const [qrModalOpen, setQrModalOpen] = useState(false);
   const [qrData, setQrData] = useState<{ productName: string, sku: string, qrCodeUrl: string } | null>(null);
-  // --- 👆 END NEW 👆 ---
 
   const form = useForm({
     initialValues: { name: '', slug: '', price: 0, description: '', isActive: true, type: 'PHYSICAL', sku: '', initialStock: 0 },
@@ -142,7 +142,6 @@ export default function ProductsPage() {
     } catch (e) { notifications.show({ title: 'Error', message: 'Could not delete product.', color: 'red' }); }
   };
 
-  // --- 👇 NEW: Handle QR View 👇 ---
   const handleViewQr = async (id: string) => {
       try {
           const res = await api.get(`/ecommerce/products/${id}/barcode`);
@@ -158,7 +157,6 @@ export default function ProductsPage() {
           printWindow.document.close();
       }
   };
-  // --- 👆 END NEW 👆 ---
 
   const rows = products.map((product) => {
     const stock = product.variants[0]?.stock || 0;
@@ -183,7 +181,6 @@ export default function ProductsPage() {
             <Menu.Target><ActionIcon variant="subtle"><IconDots size={16}/></ActionIcon></Menu.Target>
             <Menu.Dropdown>
               {canManage && <Menu.Item leftSection={<IconPencil size={14}/>} onClick={() => handleOpenEdit(product)}>Edit Product</Menu.Item>}
-              {/* --- NEW MENU ITEM --- */}
               <Menu.Item leftSection={<IconQrcode size={14}/>} onClick={() => handleViewQr(product.id)}>Barcode / Label</Menu.Item>
               <Menu.Divider />
               {canDelete && <Menu.Item color="red" leftSection={<IconTrash size={14}/>} onClick={() => handleDelete(product.id)}>Delete Product</Menu.Item>}
@@ -198,7 +195,11 @@ export default function ProductsPage() {
     <AdminLayout>
       <Group justify="space-between" mb="xl">
         <Title order={2}>Product Catalog</Title>
-        {canManage && <Button leftSection={<IconPlus size={16} />} onClick={handleOpenCreate}>Add Product</Button>}
+        <Group>
+            {/* 👇 ADDED IMPORT/EXPORT BUTTONS */}
+            <DataActions entity="products" onImportSuccess={fetchProducts} />
+            {canManage && <Button leftSection={<IconPlus size={16} />} onClick={handleOpenCreate}>Add Product</Button>}
+        </Group>
       </Group>
 
       <Paper withBorder radius="md">
@@ -209,7 +210,7 @@ export default function ProductsPage() {
         </Table>
       </Paper>
 
-      {/* --- NEW: QR MODAL --- */}
+      {/* --- QR MODAL --- */}
       <Modal opened={qrModalOpen} onClose={() => setQrModalOpen(false)} title="Product Label" centered>
           {qrData && (
               <Stack align="center">
@@ -224,7 +225,7 @@ export default function ProductsPage() {
           )}
       </Modal>
 
-      {/* CREATE/EDIT MODAL (Same as before) */}
+      {/* CREATE/EDIT MODAL */}
       <Modal opened={modalOpened} onClose={close} title={editingProduct ? "Edit Product" : "Add New Product"} size="lg">
          <Tabs defaultValue="details">
             <Tabs.List>

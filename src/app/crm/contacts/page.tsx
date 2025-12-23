@@ -3,39 +3,38 @@
 import { useState, useEffect, useCallback } from 'react';
 import { AdminLayout } from '@/components/AdminLayout';
 import {
-  Title, Button, Group, Table, Modal, TextInput, Stack, Paper, LoadingOverlay, Alert, Select, Menu, ActionIcon, Anchor, Text
+  Title, Button, Group, Table, Modal, TextInput, Stack, Paper, LoadingOverlay, Alert, Select, Menu, ActionIcon, Anchor, Text, Badge
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { notifications } from '@mantine/notifications';
-import { IconPlus, IconTrash, IconPencil, IconDots, IconUser } from '@tabler/icons-react';
+import { IconPlus, IconTrash, IconPencil, IconDots, IconFlame, IconSnowflake } from '@tabler/icons-react';
 import api from '@/lib/api';
 import { useDisclosure } from '@mantine/hooks';
 import { useAuthStore } from '@/lib/authStore';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { modals } from '@mantine/modals';
+// 👇 NEW IMPORT
+import { DataActions } from '@/components/DataActions/DataActions';
 
 export default function ContactsPage() {
   const router = useRouter();
   const { user } = useAuthStore();
   const userPermissions = user?.permissions || [];
 
-  // Granular Permissions
   const canRead = userPermissions.includes('crm:contacts:read');
   const canCreate = userPermissions.includes('crm:contacts:create');
   const canUpdate = userPermissions.includes('crm:contacts:update');
   const canDelete = userPermissions.includes('crm:contacts:delete');
 
   const [contacts, setContacts] = useState<any[]>([]);
-  const [orgs, setOrgs] = useState<any[]>([]); // For dropdown
+  const [orgs, setOrgs] = useState<any[]>([]); 
   const [loading, setLoading] = useState(true);
   
-  // Modals
   const [createModalOpen, { open: openCreate, close: closeCreate }] = useDisclosure(false);
   const [editModalOpen, { open: openEdit, close: closeEdit }] = useDisclosure(false);
   const [selectedContact, setSelectedContact] = useState<any>(null);
 
-  // Forms
   const createForm = useForm({
     initialValues: { firstName: '', lastName: '', email: '', title: '', phone: '', organizationId: '' },
     validate: { 
@@ -73,7 +72,6 @@ export default function ContactsPage() {
 
   const handleUpdate = async (values: typeof editForm.values) => {
     try {
-      // Handle unlinking organization if empty
       const payload = { ...values, organizationId: values.organizationId || null };
       await api.patch(`/crm/contacts/${selectedContact.id}`, payload);
       notifications.show({ title: 'Success', message: 'Contact updated.', color: 'green' });
@@ -113,6 +111,17 @@ export default function ContactsPage() {
       <Table.Td>{c.email}</Table.Td>
       <Table.Td>{c.title || '-'}</Table.Td>
       <Table.Td>{c.organization ? <Anchor component={Link} href={`/crm/organizations/${c.organization.id}`} onClick={(e) => e.stopPropagation()}>{c.organization.name}</Anchor> : '-'}</Table.Td>
+      
+      <Table.Td>
+          <Badge 
+            variant="light" 
+            color={c.leadScore > 50 ? 'orange' : c.leadScore > 20 ? 'blue' : 'gray'}
+            leftSection={c.leadScore > 50 ? <IconFlame size={12}/> : <IconSnowflake size={12}/>}
+          >
+             {c.leadScore || 0}
+          </Badge>
+      </Table.Td>
+
       <Table.Td onClick={(e) => e.stopPropagation()}>
         {(canUpdate || canDelete) && (
            <Menu shadow="md" width={200}>
@@ -158,13 +167,17 @@ export default function ContactsPage() {
 
       <Group justify="space-between" mb="xl">
         <Title order={2}>Contacts</Title>
-        {canCreate && <Button leftSection={<IconPlus size={16}/>} onClick={openCreate}>Add Contact</Button>}
+        <Group>
+            {/* 👇 ADDED DATA ACTIONS HERE */}
+            <DataActions entity="contacts" onImportSuccess={fetchData} />
+            {canCreate && <Button leftSection={<IconPlus size={16}/>} onClick={openCreate}>Add Contact</Button>}
+        </Group>
       </Group>
 
       <Paper withBorder radius="md">
         <LoadingOverlay visible={loading} />
         <Table striped highlightOnHover>
-          <Table.Thead><Table.Tr><Table.Th>Name</Table.Th><Table.Th>Email</Table.Th><Table.Th>Title</Table.Th><Table.Th>Organization</Table.Th><Table.Th>Actions</Table.Th></Table.Tr></Table.Thead>
+          <Table.Thead><Table.Tr><Table.Th>Name</Table.Th><Table.Th>Email</Table.Th><Table.Th>Title</Table.Th><Table.Th>Organization</Table.Th><Table.Th>Lead Score</Table.Th><Table.Th>Actions</Table.Th></Table.Tr></Table.Thead>
           <Table.Tbody>{rows}</Table.Tbody>
         </Table>
       </Paper>

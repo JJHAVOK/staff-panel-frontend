@@ -15,6 +15,8 @@ import { useAuthStore } from '@/lib/authStore';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { modals } from '@mantine/modals';
+// 👇 NEW IMPORT
+import { DataActions } from '@/components/DataActions/DataActions';
 
 export default function OpportunitiesPage() {
   const router = useRouter();
@@ -160,7 +162,11 @@ export default function OpportunitiesPage() {
 
       <Group justify="space-between" mb="xl">
         <Title order={2}>Opportunities</Title>
-        {canCreate && <Button leftSection={<IconPlus size={16}/>} onClick={openCreate}>Add Deal</Button>}
+        <Group>
+            {/* 👇 ADDED EXPORT BUTTON */}
+            <DataActions entity="deals" canImport={false} />
+            {canCreate && <Button leftSection={<IconPlus size={16}/>} onClick={openCreate}>Add Deal</Button>}
+        </Group>
       </Group>
 
       <Paper withBorder radius="md">

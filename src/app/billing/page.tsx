@@ -10,7 +10,9 @@ import { useDisclosure } from '@mantine/hooks';
 import { IconAlertCircle, IconBuildingSkyscraper, IconReceipt2 } from '@tabler/icons-react';
 import api from '@/lib/api';
 import { useAuthStore } from '@/lib/authStore';
-import { BillingManager } from '@/components/BillingManager'; // Import our new component
+import { BillingManager } from '@/components/BillingManager'; 
+// 👇 NEW IMPORT
+import { DataActions } from '@/components/DataActions/DataActions';
 
 export default function BillingPage() {
   const { user } = useAuthStore();
@@ -21,7 +23,6 @@ export default function BillingPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Drawer State
   const [selectedOrg, setSelectedOrg] = useState<any | null>(null);
   const [drawerOpened, { open, close }] = useDisclosure(false);
 
@@ -89,7 +90,11 @@ export default function BillingPage() {
         )}
       </Drawer>
 
-      <Title order={2} mb="xl">Billing & Invoices</Title>
+      <Group justify="space-between" mb="xl">
+          <Title order={2}>Billing & Invoices</Title>
+          {/* 👇 ADDED EXPORT BUTTON (Export Organizations/Clients List) */}
+          <DataActions entity="organizations" canImport={false} /> 
+      </Group>
 
       <Grid mb="xl">
         <Grid.Col span={4}>

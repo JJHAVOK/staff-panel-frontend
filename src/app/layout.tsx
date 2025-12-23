@@ -1,9 +1,11 @@
 import '@mantine/core/styles.css';
+import '@mantine/dates/styles.css';
 import '@mantine/notifications/styles.css';
+import '@mantine/charts/styles.css';
+
 import React from 'react';
-import { MantineProvider, ColorSchemeScript } from '@mantine/core';
-import { Notifications } from '@mantine/notifications';
-import { ModalsProvider } from '@mantine/modals'; // <-- IMPORT MODALS
+import { ColorSchemeScript } from '@mantine/core';
+import { DynamicThemeProvider } from '@/components/DynamicThemeProvider'; // <-- The Wrapper
 
 export const metadata = {
   title: 'Staff Admin Panel',
@@ -14,7 +16,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <head>
-        <ColorSchemeScript />
+        <ColorSchemeScript defaultColorScheme="dark" />
         <link rel="shortcut icon" href="/favicon.svg" />
         <meta
           name="viewport"
@@ -22,12 +24,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body>
-        <MantineProvider defaultColorScheme="dark">
-          <ModalsProvider> {/* <-- WRAP WITH THIS */}
-            <Notifications />
-            {children}
-          </ModalsProvider>
-        </MantineProvider>
+        {/* DynamicThemeProvider handles Theme, Modals, and Notifications internally */}
+        <DynamicThemeProvider>
+          {children}
+        </DynamicThemeProvider>
       </body>
     </html>
   );

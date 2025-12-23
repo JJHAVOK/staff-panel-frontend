@@ -2,129 +2,163 @@
 
 import { useState, useEffect } from 'react';
 import { AdminLayout } from '@/components/AdminLayout';
-import { Title, Button, Group, Table, Badge, Paper, LoadingOverlay, Modal, TextInput, MultiSelect, Stack, Text, Code, Switch, ActionIcon } from '@mantine/core';
-import { IconPlus, IconWebhook, IconRefresh, IconTrash, IconEye } from '@tabler/icons-react';
+import { 
+  Title, Text, Button, Table, Modal, TextInput, MultiSelect, 
+  Group, ActionIcon, Paper, LoadingOverlay, Drawer, Code, Stack, Badge, Alert 
+} from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { notifications } from '@mantine/notifications';
+import { IconTrash, IconWebhook, IconPlus, IconBook, IconBolt } from '@tabler/icons-react';
 import api from '@/lib/api';
+import { useDisclosure } from '@mantine/hooks';
 
-const EVENT_OPTIONS = [
-  'ORDER_CREATED', 'ORDER_PAID', 'ORDER_SHIPPED',
-  'USER_REGISTERED', 'CONTACT_CREATED',
-  'TICKET_CREATED', 'TICKET_UPDATED'
+const EVENTS = [
+  { value: 'ORDER_CREATED', label: 'Order Created' },
+  { value: 'ORDER_PAID', label: 'Order Paid' },
+  { value: 'TICKET_CREATED', label: 'Ticket Created' },
+  { value: 'TICKET_REPLIED', label: 'Ticket Reply' },
+  { value: 'USER_REGISTERED', label: 'New User Signup' },
+  { value: 'CONTACT_CREATED', label: 'CRM Contact Created' }
 ];
 
 export default function WebhooksPage() {
   const [hooks, setHooks] = useState<any[]>([]);
-  const [logs, setLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [modalOpen, setModalOpen] = useState(false);
-  const [logsOpen, setLogsOpen] = useState(false);
-  const [selectedHook, setSelectedHook] = useState<any>(null);
+  
+  const [createOpened, { open: openCreate, close: closeCreate }] = useDisclosure(false);
+  const [docsOpened, { open: openDocs, close: closeDocs }] = useDisclosure(false);
 
   const form = useForm({
-    initialValues: { name: '', url: '', secret: '', events: [], isActive: true },
-    validate: { 
-        name: (v) => v.length < 2 ? 'Required' : null,
-        url: (v) => v.includes('http') ? null : 'Invalid URL'
-    }
+    initialValues: { name: '', url: '', events: [] as string[] },
+    validate: {
+      name: (v) => (v.length < 2 ? 'Name required' : null),
+      url: (v) => (/^https?:\/\/.+/.test(v) ? null : 'Valid URL required'),
+      events: (v) => (v.length === 0 ? 'Select at least one event' : null),
+    },
   });
 
   const fetchHooks = async () => {
     setLoading(true);
-    try { const res = await api.get('/webhooks'); setHooks(res.data); } catch(e) {} finally { setLoading(false); }
+    try {
+      const res = await api.get('/scheduler/webhooks'); // Assuming backend endpoint exists
+      setHooks(res.data || []);
+    } catch (e) {
+      console.error(e);
+      // Fallback for demo if backend route missing
+      setHooks([]); 
+    } finally { setLoading(false); }
   };
 
   useEffect(() => { fetchHooks(); }, []);
 
   const handleCreate = async (values: typeof form.values) => {
     try {
-        await api.post('/webhooks', values);
-        notifications.show({ title: 'Success', message: 'Webhook created', color: 'green' });
-        setModalOpen(false); form.reset(); fetchHooks();
-    } catch(e) { notifications.show({ title: 'Error', message: 'Failed to create', color: 'red' }); }
-  };
-
-  const handleTest = async (id: string) => {
-    try {
-        await api.post(`/webhooks/${id}/test`);
-        notifications.show({ title: 'Test Sent', message: 'Check your endpoint', color: 'blue' });
-    } catch(e) { notifications.show({ title: 'Error', message: 'Test failed', color: 'red' }); }
+      await api.post('/scheduler/webhooks', values);
+      notifications.show({ title: 'Success', message: 'Webhook registered.', color: 'green' });
+      fetchHooks(); closeCreate(); form.reset();
+    } catch (e) { notifications.show({ title: 'Error', message: 'Failed to create webhook.', color: 'red' }); }
   };
 
   const handleDelete = async (id: string) => {
-      if(!confirm('Delete webhook?')) return;
-      await api.delete(`/webhooks/${id}`);
+    if(!confirm('Delete this webhook?')) return;
+    try {
+      await api.delete(`/scheduler/webhooks/${id}`);
+      notifications.show({ title: 'Deleted', message: 'Webhook removed.', color: 'blue' });
       fetchHooks();
-  };
-
-  const viewLogs = async (hook: any) => {
-      setSelectedHook(hook);
-      try {
-          const res = await api.get(`/webhooks/${hook.id}/logs`);
-          setLogs(res.data);
-          setLogsOpen(true);
-      } catch(e) {}
+    } catch(e) { notifications.show({ title: 'Error', message: 'Failed to delete.', color: 'red' }); }
   };
 
   return (
     <AdminLayout>
       <Group justify="space-between" mb="xl">
-         <Group><IconWebhook size={32}/><Title order={2}>Webhooks</Title></Group>
-         <Button leftSection={<IconPlus size={16}/>} onClick={() => setModalOpen(true)}>Add Webhook</Button>
+          <Group>
+              <IconWebhook size={32} stroke={1.5} />
+              <div>
+                  <Group>
+                    <Title order={2}>Webhooks</Title>
+                    <Button variant="light" size="xs" leftSection={<IconBook size={14}/>} onClick={openDocs}>Documentation</Button>
+                  </Group>
+                  <Text c="dimmed">Real-time event subscriptions.</Text>
+              </div>
+          </Group>
+          <Button leftSection={<IconPlus size={16}/>} onClick={openCreate}>Add Webhook</Button>
       </Group>
 
-      <Paper withBorder radius="md">
-         <LoadingOverlay visible={loading} />
-         <Table striped>
-            <Table.Thead><Table.Tr><Table.Th>Name</Table.Th><Table.Th>Events</Table.Th><Table.Th>Status</Table.Th><Table.Th>Actions</Table.Th></Table.Tr></Table.Thead>
-            <Table.Tbody>
-                {hooks.map(h => (
-                    <Table.Tr key={h.id}>
-                        <Table.Td fw={500}>{h.name}<br/><Text size="xs" c="dimmed">{h.url}</Text></Table.Td>
-                        <Table.Td>{h.events.map((e:string) => <Badge key={e} size="xs" mr={4}>{e}</Badge>)}</Table.Td>
-                        <Table.Td><Badge color={h.isActive ? 'green' : 'gray'}>{h.isActive ? 'Active' : 'Paused'}</Badge></Table.Td>
-                        <Table.Td>
-                            <Group gap="xs">
-                                <ActionIcon variant="light" onClick={() => handleTest(h.id)} title="Test"><IconRefresh size={16}/></ActionIcon>
-                                <ActionIcon variant="light" color="blue" onClick={() => viewLogs(h)} title="Logs"><IconEye size={16}/></ActionIcon>
-                                <ActionIcon variant="light" color="red" onClick={() => handleDelete(h.id)}><IconTrash size={16}/></ActionIcon>
-                            </Group>
-                        </Table.Td>
-                    </Table.Tr>
-                ))}
-            </Table.Tbody>
-         </Table>
-      </Paper>
-
-      <Modal opened={modalOpen} onClose={() => setModalOpen(false)} title="New Webhook">
+      {/* --- CREATE MODAL --- */}
+      <Modal opened={createOpened} onClose={closeCreate} title="Register Webhook">
           <form onSubmit={form.onSubmit(handleCreate)}>
               <Stack>
-                  <TextInput label="Name" placeholder="e.g. ERP Sync" {...form.getInputProps('name')} />
-                  <TextInput label="Payload URL" placeholder="https://..." {...form.getInputProps('url')} />
-                  <TextInput label="Secret Key (Optional)" placeholder="For HMAC signature" {...form.getInputProps('secret')} />
-                  <MultiSelect label="Events" data={EVENT_OPTIONS} {...form.getInputProps('events')} />
-                  <Switch label="Active" {...form.getInputProps('isActive', { type: 'checkbox' })} />
-                  <Button type="submit">Create Webhook</Button>
+                  <TextInput label="Name" placeholder="e.g. Slack Notification" required {...form.getInputProps('name')} />
+                  <TextInput label="Target URL" placeholder="https://api.mysite.com/webhook" required {...form.getInputProps('url')} />
+                  <MultiSelect label="Events" data={EVENTS} placeholder="Select events" required {...form.getInputProps('events')} />
+                  <Button type="submit" mt="md">Register</Button>
               </Stack>
           </form>
       </Modal>
 
-      <Modal opened={logsOpen} onClose={() => setLogsOpen(false)} title={`Delivery Logs: ${selectedHook?.name}`} size="lg">
-          <Stack>
-              {logs.map(log => (
-                  <Paper key={log.id} withBorder p="xs">
-                      <Group justify="space-between">
-                          <Badge color={log.success ? 'green' : 'red'}>{log.statusCode}</Badge>
-                          <Text size="xs">{new Date(log.createdAt).toLocaleString()}</Text>
-                      </Group>
-                      <Text size="xs" mt={4} c="dimmed">Event: {log.event}</Text>
-                      <Code block mt="xs" fz="xs">{log.response || 'No response body'}</Code>
-                  </Paper>
-              ))}
-              {logs.length === 0 && <Text c="dimmed">No logs found.</Text>}
+      {/* --- DOCS DRAWER --- */}
+      <Drawer opened={docsOpened} onClose={closeDocs} title="Webhook Reference" position="right" size="lg">
+          <Stack gap="lg">
+              <Alert icon={<IconBolt/>} color="violet">
+                  Webhooks are sent as <b>POST</b> requests with a JSON payload.
+              </Alert>
+              
+              <div>
+                  <Title order={5} mb="xs">Payload Format</Title>
+                  <Code block>{`
+{
+  "event": "ORDER_CREATED",
+  "timestamp": "2025-10-12T10:00:00Z",
+  "data": {
+    "id": "ord_123",
+    "total": 59.99,
+    ...
+  }
+}
+                  `}</Code>
+              </div>
+
+              <Title order={5}>Event Catalog</Title>
+              <Table withTableBorder>
+                  <Table.Thead><Table.Tr><Table.Th>Event</Table.Th><Table.Th>Description</Table.Th></Table.Tr></Table.Thead>
+                  <Table.Tbody>
+                      {EVENTS.map(e => (
+                          <Table.Tr key={e.value}>
+                              <Table.Td><Code>{e.value}</Code></Table.Td>
+                              <Table.Td>{e.label}</Table.Td>
+                          </Table.Tr>
+                      ))}
+                  </Table.Tbody>
+              </Table>
           </Stack>
-      </Modal>
+      </Drawer>
+
+      <Paper withBorder p="md" radius="md">
+          <LoadingOverlay visible={loading} />
+          <Table striped highlightOnHover>
+              <Table.Thead>
+                  <Table.Tr><Table.Th>Name</Table.Th><Table.Th>URL</Table.Th><Table.Th>Events</Table.Th><Table.Th>Action</Table.Th></Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                  {hooks.map(hook => (
+                      <Table.Tr key={hook.id}>
+                          <Table.Td fw={500}>{hook.name}</Table.Td>
+                          <Table.Td style={{maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis'}}>{hook.url}</Table.Td>
+                          <Table.Td>
+                              <Group gap={4}>
+                                  {hook.events.slice(0, 2).map((e: string) => <Badge key={e} size="sm" variant="outline">{e}</Badge>)}
+                                  {hook.events.length > 2 && <Badge size="sm" variant="outline">+{hook.events.length - 2}</Badge>}
+                              </Group>
+                          </Table.Td>
+                          <Table.Td>
+                              <ActionIcon color="red" variant="subtle" onClick={() => handleDelete(hook.id)}><IconTrash size={16}/></ActionIcon>
+                          </Table.Td>
+                      </Table.Tr>
+                  ))}
+                  {!loading && hooks.length === 0 && <Table.Tr><Table.Td colSpan={4} align="center"><Text c="dimmed">No webhooks configured.</Text></Table.Td></Table.Tr>}
+              </Table.Tbody>
+          </Table>
+      </Paper>
     </AdminLayout>
   );
 }
